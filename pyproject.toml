@@ -1,0 +1,12 @@
+[project]
+name = "vulnforge"
+version = "0.2.0"
+requires-python = ">=3.12"
+dependencies = ["pydantic>=2,<3", "typer>=0.12,<1", "openai>=1.60,<3", "anthropic>=0.45,<1"]
+[project.optional-dependencies]
+dev = ["pytest>=8,<10", "pytest-asyncio>=0.24,<2"]
+[project.scripts]
+vulnforge = "vulnforge.cli:app"
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
