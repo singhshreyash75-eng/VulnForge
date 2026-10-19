@@ -1,1 +1,0 @@
-"""Bounded autonomous research loop."""

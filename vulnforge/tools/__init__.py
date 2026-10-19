@@ -1,1 +1,0 @@
-"""Registered and validated tools."""
