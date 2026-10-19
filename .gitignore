@@ -1,0 +1,30 @@
+```gitignore
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+
+# Secrets and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Experiment artifacts
+artifacts/
+logs/
+*.log
+
+# macOS
+.DS_Store
+
+# VS Code local settings
+.vscode/
+```
