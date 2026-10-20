@@ -1,0 +1,33 @@
+
+services:
+  document-api:
+    build:
+      context: ./targets/document_api
+
+    environment:
+      LAB_MODE: ${LAB_MODE:-vulnerable}
+
+    ports:
+      - "127.0.0.1:18080:8000"
+
+    read_only: true
+
+    tmpfs:
+      - /tmp
+
+    cap_drop:
+      - ALL
+
+    security_opt:
+      - no-new-privileges:true
+
+    pids_limit: 64
+    mem_limit: 256m
+    cpus: 0.5
+
+    networks:
+      - lab_internal
+
+networks:
+  lab_internal:
+    driver: bridge

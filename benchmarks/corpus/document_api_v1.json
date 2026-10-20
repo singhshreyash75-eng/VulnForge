@@ -1,0 +1,31 @@
+
+{
+  "schema_version": "0.1",
+  "target_id": "document-api-v1",
+  "name": "Synthetic Document Authorization API",
+  "target_type": "web_api",
+  "source": "vulnforge-lab",
+  "version": "1.0.0",
+  "execution": {
+    "compose_file": "lab/docker-compose.yml",
+    "service": "document-api",
+    "base_url": "http://127.0.0.1:18080"
+  },
+  "supported_modes": [
+    "vulnerable",
+    "patched"
+  ],
+  "vulnerability_categories": [
+    "CWE-639",
+    "BOLA",
+    "IDOR"
+  ],
+  "evaluation": {
+    "validator": "document_authorization_oracle",
+    "ground_truth_file": "document_api_v1.truth.json"
+  },
+  "limits": {
+    "max_requests": 30,
+    "max_duration_seconds": 120
+  }
+}

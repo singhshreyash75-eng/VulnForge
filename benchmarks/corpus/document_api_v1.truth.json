@@ -1,0 +1,51 @@
+
+{
+  "target_id": "document-api-v1",
+  "visibility": "evaluator_only",
+  "cases": [
+    {
+      "case_id": "cross-owner-read",
+      "category": "CWE-639",
+      "description": "Alice must not access Bob's private document",
+      "request": {
+        "method": "GET",
+        "path": "/api/documents/102",
+        "headers": {
+          "X-API-Key": "lab-alice-key"
+        }
+      },
+      "expected": {
+        "vulnerable": {
+          "status": 200,
+          "document_id": 102,
+          "owner": "bob"
+        },
+        "patched": {
+          "status": 403
+        }
+      }
+    },
+    {
+      "case_id": "owner-read-control",
+      "category": "authorization-control",
+      "description": "Alice can access her own document",
+      "request": {
+        "method": "GET",
+        "path": "/api/documents/101",
+        "headers": {
+          "X-API-Key": "lab-alice-key"
+        }
+      },
+      "expected": {
+        "vulnerable": {
+          "status": 200,
+          "document_id": 101
+        },
+        "patched": {
+          "status": 200,
+          "document_id": 101
+        }
+      }
+    }
+  ]
+}
