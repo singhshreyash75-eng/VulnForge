@@ -41,7 +41,7 @@ VulnForge is being developed toward a **multi-target benchmark corpus** incorpor
 
 This allows the framework to investigate not only whether an AI model discovers a vulnerability, but also whether it correctly rejects unsupported hypotheses when no known vulnerability is present.
 
-**The objective is to evaluate autonomous security-research capability—not merely vulnerability-report generation.**
+**The objective is to measure independent security-research capability—not to engineer successful outcomes or merely generate vulnerability reports.**
 
 ### Current Development State
 
@@ -51,7 +51,7 @@ Its Python research-engine foundation, model-provider adapters, controlled multi
 
 The first local model-driven tool-execution experiment has succeeded. The initial vulnerable and patched application modes have also been exercised through integration tests.
 
-Full autonomous vulnerability discovery, independent finding adjudication, multi-target benchmarking, and cloud-model comparisons remain ongoing development objectives.
+The restricted HTTP gateway has also enabled Qwen to inspect the live local document API. Early exploratory runs demonstrate successful tool use but missed the seeded cross-owner authorization defect. Offline coverage-analysis and oracle evaluation tests have passed; structured finding submission, claim-level adjudication, multi-target benchmarking, and cloud-model comparisons remain development objectives.
 
 ---
 
@@ -183,7 +183,7 @@ These hypotheses will be evaluated progressively.
 
 ## 04. Research Philosophy
 
-VulnForge follows six engineering and research principles.
+VulnForge follows seven engineering and research principles.
 
 ### Autonomy Over Static Automation
 
@@ -216,6 +216,10 @@ Historical vulnerabilities and public benchmark datasets are valuable, but resul
 ### Controlled Research Over Unrestricted Exploitation
 
 Autonomous security testing must operate within explicit authorization boundaries, restricted tools, isolated environments, and auditable execution policies.
+
+### Non-Intervention Over Forced Success
+
+The benchmark engine must not steer a model toward a known vulnerability, repeat an experiment until it succeeds, or silently repair its investigative decisions. Missed vulnerabilities, premature termination, unsupported claims, and inconclusive results are first-class research outcomes. Coverage analysis and ground-truth validation occur independently of model decision-making. Any assisted investigation must be labeled and evaluated as a separate experimental condition.
 
 ---
 
@@ -311,7 +315,7 @@ Likewise, the absence of a reported vulnerability does not prove that an unfamil
 
 The diagram represents the intended architecture. It does not imply that every component is currently implemented.
 
-Each model will conduct an independent experiment against a freshly initialized target environment.
+Each model will conduct an independent experiment against a freshly initialized target environment. The model router selects one provider per trial; it does not pool model reasoning or share previous model findings across trials.
 
 The benchmark corpus manager will maintain target metadata, software versions, execution configurations, and evaluator-only ground truth.
 
@@ -383,7 +387,7 @@ However, frontier and open-weight models may differ substantially in model size,
 
 These differences will be documented rather than ignored.
 
-The project does not aim to establish a universal ranking of AI models.
+The project does not aim to establish a universal ranking of AI models. Results will be scoped to tested versions, targets, prompts, tools, inference settings, and budgets. A larger model is not assumed to outperform a smaller model on every task.
 
 ---
 
@@ -467,7 +471,19 @@ Each model experiment should:
 9. Record token usage, runtime, and cost.
 10. Produce reproducible experimental results.
 
-Ground-truth labels and validator logic must remain inaccessible to the research agent during an experiment.
+Ground-truth labels and validator logic must remain inaccessible to the research agent during an experiment. The model is free to end with no finding, a missed vulnerability, or an inconclusive result; the evaluator records these outcomes rather than redirecting the model toward the answer.
+
+### Exploratory Runs vs Formal Benchmarks
+
+Development runs may use revised prompts, additional diagnostics, or experimental tool adapters to test the infrastructure. They must be labeled **exploratory** and must not be pooled with formal benchmark trials.
+
+Formal trials will use a preregistered or versioned protocol: fixed neutral instructions, equivalent permitted tools, target resets, predetermined repetition counts, model/version identifiers, and explicit budgets. Retries are allowed only under a documented, provider-neutral failure policy, not because a model missed the vulnerability.
+
+### Model Variability and Failure Analysis
+
+A model can complete a tool-using workflow yet fail to test the relevant authorization boundary. It can also generate plausible but unsupported conclusions. These outcomes are recorded separately as execution success, investigation coverage, finding submission, and independently verified discovery.
+
+Repeated trials will estimate variation within a model configuration. Reports will include counts and uncertainty intervals when sample sizes permit, rather than extrapolating from one successful or failed run. Public historical benchmarks will be marked for possible training-data exposure, and held-out cases will be preferred for generalization studies.
 
 ### Evidence Requirements
 
@@ -545,7 +561,7 @@ Where practical, the benchmark will record:
 - Trial identifiers.
 - Independent verification results.
 
-Initial demonstrations will be treated as exploratory research.
+Initial demonstrations will be treated as exploratory research. Benchmark tables must distinguish **no finding**, **unsupported claim**, **verified finding**, **missed known defect**, **invalid run**, and **inconclusive outcome**. A model observing a suspicious response is not credited with a discovery unless its submitted finding identifies the relevant weakness and satisfies the evaluator-defined evidence criteria.
 
 Larger-scale conclusions will require sufficiently diverse targets, repeated trials, and appropriate statistical analysis.
 
@@ -579,7 +595,7 @@ Technology choices may evolve as experimental requirements become clearer.
 
 ## 11. Current Development Status
 
-**Current stage: Milestone 4 — Restricted HTTP Investigation Infrastructure**
+**Current stage: Milestone 4.3 — HTTP Investigation and Evaluation Foundations**
 
 ### Implemented
 
@@ -600,15 +616,18 @@ Technology choices may evolve as experimental requirements become clearer.
 - [x] Vulnerable and patched application modes.
 - [x] Initial benchmark target manifest and evaluator ground truth.
 - [x] Initial Docker laboratory integration tests.
+- [x] Restricted local HTTP inspection tool and real Qwen HTTP investigation runs.
+- [x] Offline-tested investigation coverage analyzer.
+- [x] Initial independent authorization oracle implementation and offline evaluator tests.
 - [x] GitHub version control and milestone-based commits.
 
 ### In Progress
 
-- [ ] Restricted HTTP investigation tool integration.
-- [ ] Model-directed investigation of the real Docker target.
-- [ ] Structured HTTP evidence collection.
-- [ ] Independent vulnerability validation.
-- [ ] Patched-versus-vulnerable autonomous comparison.
+- [ ] Structured model-submitted finding contracts and claim-level adjudication.
+- [ ] Full live oracle acceptance checks for both target modes.
+- [ ] Versioned experimental protocols and standardized run manifests.
+- [ ] Reliable model-run labeling (native tool calls versus JSON fallback).
+- [ ] Formal vulnerable-versus-patched model comparison with repeated trials.
 
 ### Planned
 
@@ -630,7 +649,9 @@ The initial offline agent tests have passed.
 
 A local Qwen experiment successfully selected and executed a permitted simulated inspection tool, received the observation, and generated a final response.
 
-The initial Docker target has been exercised in vulnerable and patched modes using automated HTTP integration checks.
+The initial Docker target has been exercised in vulnerable and patched modes using automated HTTP integration checks. Qwen has also performed live HTTP investigations against the target; early runs missed the seeded cross-owner defect or drew insufficiently supported conclusions. This is recorded as exploratory evidence of model limitations, not a software failure to conceal.
+
+The five offline evaluation tests for coverage and discovery-status logic passed. Live end-to-end oracle correctness and claim-level grading must still be verified before formal benchmarking.
 
 These achievements validate important infrastructure components.
 
@@ -759,7 +780,19 @@ python live_agent.py
 
 This command runs the existing local model-driven simulated-tool demonstration.
 
-The real HTTP investigation workflow is being developed separately.
+To run the current evaluated HTTP investigation, first start the matching target mode, then execute:
+
+```bash
+python investigate_lab.py --mode vulnerable
+```
+
+For the patched target, recreate it with `LAB_MODE=patched` and use `--mode patched`. The evaluator output does not itself prove that the model submitted a correct finding.
+
+Offline evaluator checks:
+
+```bash
+python -m pytest tests/test_evaluation.py -v
+```
 
 **Development note:** Laboratory integration tests require the target application to be running in the corresponding mode. They should not be confused with offline unit tests.
 
@@ -805,7 +838,7 @@ The intended isolation architecture includes:
 - Environment resets between experiments.
 - Separation of agent-visible data and evaluator-only ground truth.
 
-Security controls will be tested independently rather than assumed effective because a container is present.
+Security controls will be tested independently rather than assumed effective because a container is present. In particular, loopback port binding alone does not prevent a container from initiating outbound connections; deployment must enforce separate network-egress restrictions.
 
 ---
 
@@ -944,7 +977,9 @@ Offensive AI Security · AI Red Teaming · Autonomous Vulnerability Research · 
 
 The project is built around a simple research principle:
 
-**Autonomy must be observable. Vulnerabilities must be verifiable. Benchmarks must be reproducible.**
+**Autonomy must be observable. Vulnerabilities must be verifiable. Benchmarks must be reproducible. Failures must be reported without intervention or selective omission.**
+
+VulnForge is not designed to make every AI model succeed. It is designed to discover, through controlled experiments, what each model can and cannot do under specified conditions.
 
 ---
 
