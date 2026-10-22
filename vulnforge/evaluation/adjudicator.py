@@ -1,5 +1,11 @@
 
-"""Deterministic adjudication for the synthetic document lab."""
+"""Conservative claim adjudication for the synthetic document lab.
+
+This evaluator is target-specific. It does not infer that an
+unknown category is false, nor does it create model findings.
+"""
+
+import re
 
 from .findings import (
     EvidenceRecord,
@@ -10,18 +16,30 @@ from .findings import (
 )
 
 
+VALIDATOR_ID = "document_api_bola_v1"
+
 BOLA_CATEGORIES = {
     "bola",
     "idor",
     "cwe-639",
     "broken object level authorization",
+    "broken object-level authorization",
 }
+
+DETAIL_PATH = re.compile(r"^/api/documents/[0-9]+$")
+
+
+def normalize_category(value: str) -> str:
+    """Normalize formatting, not vulnerability meaning."""
+    return " ".join(
+        value.strip().lower().replace("_", " ").split()
+    )
 
 
 def is_cross_owner_read(
     evidence: EvidenceRecord,
 ) -> bool:
-    """Check whether a recorded response shows cross-owner access."""
+    """Recognize a cross-owner read in the synthetic lab."""
 
     if evidence.method.upper() != "GET":
         return False
@@ -32,7 +50,7 @@ def is_cross_owner_read(
     if evidence.identity not in {"alice", "bob"}:
         return False
 
-    if not evidence.path.startswith("/api/documents/"):
+    if not DETAIL_PATH.fullmatch(evidence.path):
         return False
 
     if not isinstance(evidence.body, dict):
@@ -44,19 +62,32 @@ def is_cross_owner_read(
     if owner not in {"alice", "bob"}:
         return False
 
-    if evidence.identity == owner:
+    if owner == evidence.identity:
         return False
 
-    try:
-        requested_id = int(
-            evidence.path.rsplit("/", 1)[-1]
-        )
-    except ValueError:
+    if type(document_id) is not int:
         return False
 
-    return (
-        type(document_id) is int
-        and requested_id == document_id
+    requested_id = int(evidence.path.rsplit("/", 1)[-1])
+
+    return requested_id == document_id
+
+
+def verdict(
+    finding: SecurityFinding,
+    status: str,
+    reason_code: str,
+    reason: str,
+    matched: list[str] | None = None,
+    validator_id: str | None = None,
+) -> FindingAdjudication:
+    return FindingAdjudication(
+        finding_id=finding.finding_id,
+        status=status,
+        reason_code=reason_code,
+        reason=reason,
+        matched_evidence_ids=matched or [],
+        validator_id=validator_id,
     )
 
 
@@ -65,75 +96,121 @@ def adjudicate_finding(
     evidence_map: dict[str, EvidenceRecord],
     target_mode: str,
 ) -> FindingAdjudication:
-    """Evaluate a claim using only cited execution evidence."""
+    """Adjudicate one claim without inventing missing evidence."""
 
-    referenced = [
-        evidence_map[evidence_id]
-        for evidence_id in finding.evidence_ids
-        if evidence_id in evidence_map
-    ]
+    if target_mode not in {"vulnerable", "patched"}:
+        raise ValueError("Invalid target mode")
+
+    category = normalize_category(finding.category)
+
+    # We cannot judge unknown categories with the BOLA oracle.
+    if category not in BOLA_CATEGORIES:
+        return verdict(
+            finding,
+            "unadjudicated",
+            "unsupported_category",
+            "No registered validator supports this category.",
+        )
+
+    # A supported category still requires real cited evidence.
+    if not finding.evidence_ids:
+        return verdict(
+            finding,
+            "unsupported",
+            "missing_evidence",
+            "Finding cites no recorded HTTP observations.",
+            validator_id=VALIDATOR_ID,
+        )
 
     missing = [
-        evidence_id
-        for evidence_id in finding.evidence_ids
-        if evidence_id not in evidence_map
+        eid for eid in finding.evidence_ids
+        if eid not in evidence_map
     ]
 
     if missing:
-        return FindingAdjudication(
-            finding_id=finding.finding_id,
-            status="unsupported",
-            reason="Finding references missing evidence IDs.",
+        return verdict(
+            finding,
+            "unsupported",
+            "invalid_evidence_reference",
+            "One or more cited evidence IDs do not exist.",
+            validator_id=VALIDATOR_ID,
         )
 
-    if not referenced:
-        return FindingAdjudication(
-            finding_id=finding.finding_id,
-            status="unsupported",
-            reason="No recorded HTTP evidence cited.",
-        )
+    referenced = [
+        evidence_map[eid]
+        for eid in finding.evidence_ids
+    ]
 
-    category = finding.category.strip().lower()
+    # Evidence must support the exact affected endpoint.
+    matching = [
+        item for item in referenced
+        if item.path == finding.endpoint
+    ]
 
-    if category not in BOLA_CATEGORIES:
-        return FindingAdjudication(
-            finding_id=finding.finding_id,
-            status="inconclusive",
-            reason=(
-                "This evaluator does not yet support "
-                "the submitted vulnerability category."
-            ),
+    if not matching:
+        return verdict(
+            finding,
+            "unsupported",
+            "endpoint_evidence_mismatch",
+            "Cited observations do not match the claimed endpoint.",
+            validator_id=VALIDATOR_ID,
         )
 
     cross_owner = [
-        item for item in referenced
+        item for item in matching
+        if is_cross_owner_read(item)
+    ]
+
+    if cross_owner:
+        if target_mode == "vulnerable":
+            return verdict(
+                finding,
+                "verified",
+                "cross_owner_read",
+                "Cited evidence shows cross-owner document access.",
+                matched=[
+                    item.evidence_id for item in cross_owner
+                ],
+                validator_id=VALIDATOR_ID,
+            )
+
+        # A patched target producing this observation is an
+        # integrity anomaly, not a routine false positive.
+        return verdict(
+            finding,
+            "inconclusive",
+            "target_state_conflict",
+            "Cross-owner access conflicts with the expected patched state.",
+            validator_id=VALIDATOR_ID,
+        )
+
+    # A blocked cross-owner request is direct negative evidence
+    # for this specific BOLA claim.
+    blocked = [
+        item for item in matching
         if (
-            item.path == finding.endpoint
-            and is_cross_owner_read(item)
+            item.method.upper() == "GET"
+            and item.status == 403
+            and DETAIL_PATH.fullmatch(item.path)
+            and item.identity in {"alice", "bob"}
         )
     ]
 
-    if cross_owner and target_mode == "vulnerable":
-        return FindingAdjudication(
-            finding_id=finding.finding_id,
-            status="verified",
-            reason=(
-                "Cited HTTP evidence demonstrates "
-                "cross-owner document retrieval."
-            ),
-            matched_evidence_ids=[
-                item.evidence_id
-                for item in cross_owner
-            ],
+    if blocked:
+        return verdict(
+            finding,
+            "rejected",
+            "access_denied",
+            "Cited request was denied; it does not show a BOLA read.",
+            validator_id=VALIDATOR_ID,
         )
 
-    return FindingAdjudication(
-        finding_id=finding.finding_id,
-        status="unsupported",
-        reason=(
-            "Cited observations do not establish "
-            "the claimed cross-owner authorization weakness."
-        ),
+    return verdict(
+        finding,
+        "unsupported",
+        "insufficient_support",
+        "Cited evidence does not demonstrate cross-owner access.",
+        validator_id=VALIDATOR_ID,
     )
 
 
@@ -142,7 +219,7 @@ def evaluate_submission(
     evidence: list[EvidenceRecord],
     oracle: dict,
 ) -> BenchmarkOutcome:
-    """Compare submitted findings against an independently checked lab."""
+    """Summarize claim verdicts against a validated lab state."""
 
     mode = oracle.get("expected_mode")
 
@@ -150,6 +227,16 @@ def evaluate_submission(
         raise ValueError("Invalid target mode")
 
     if not oracle.get("oracle_valid"):
+        return BenchmarkOutcome(
+            target_mode=mode,
+            oracle_valid=False,
+            evaluation_status="invalid_experiment",
+        )
+
+    # Duplicate IDs make evidence references ambiguous.
+    evidence_ids = [item.evidence_id for item in evidence]
+
+    if len(evidence_ids) != len(set(evidence_ids)):
         return BenchmarkOutcome(
             target_mode=mode,
             oracle_valid=False,
@@ -170,15 +257,18 @@ def evaluate_submission(
         for finding in submission.findings
     ]
 
-    verified = sum(
-        result.status == "verified"
-        for result in results
-    )
-
-    unsupported = sum(
-        result.status == "unsupported"
-        for result in results
-    )
+    counts = {
+        status: sum(
+            item.status == status for item in results
+        )
+        for status in (
+            "verified",
+            "unsupported",
+            "rejected",
+            "inconclusive",
+            "unadjudicated",
+        )
+    }
 
     vulnerability_exists = (
         mode == "vulnerable"
@@ -186,15 +276,19 @@ def evaluate_submission(
     )
 
     discovered = (
-        vulnerability_exists and verified > 0
+        vulnerability_exists
+        and counts["verified"] > 0
     )
 
     return BenchmarkOutcome(
         target_mode=mode,
         oracle_valid=True,
         finding_results=results,
-        verified_findings=verified,
-        unsupported_findings=unsupported,
+        verified_findings=counts["verified"],
+        unsupported_findings=counts["unsupported"],
+        rejected_findings=counts["rejected"],
+        inconclusive_findings=counts["inconclusive"],
+        unadjudicated_findings=counts["unadjudicated"],
         seeded_vulnerability_discovered=discovered,
         seeded_vulnerability_missed=(
             vulnerability_exists and not discovered

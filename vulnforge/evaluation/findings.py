@@ -1,5 +1,5 @@
 
-"""Typed contracts for model-submitted security findings."""
+"""Typed contracts for model findings and independent evaluation."""
 
 from typing import Literal
 
@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class EvidenceRecord(BaseModel):
-    """An HTTP observation captured from a real tool execution."""
+    """A recorded HTTP observation from the trusted tool trace."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -20,7 +20,7 @@ class EvidenceRecord(BaseModel):
 
 
 class SecurityFinding(BaseModel):
-    """A model's claim, not an independently verified result."""
+    """A model-submitted claim, not an evaluator verdict."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -43,11 +43,13 @@ class SecurityFinding(BaseModel):
 
 
 class FindingSubmission(BaseModel):
-    """Structured output submitted by an investigating model."""
+    """The model's final structured research submission."""
 
     model_config = ConfigDict(extra="forbid")
 
-    findings: list[SecurityFinding] = Field(default_factory=list)
+    findings: list[SecurityFinding] = Field(
+        default_factory=list
+    )
 
     conclusion: Literal[
         "findings_reported",
@@ -59,7 +61,9 @@ class FindingSubmission(BaseModel):
 
 
 class FindingAdjudication(BaseModel):
-    """Evaluator-owned outcome for one model finding."""
+    """An evaluator-owned verdict for one submitted claim."""
+
+    model_config = ConfigDict(extra="forbid")
 
     finding_id: str
 
@@ -68,27 +72,36 @@ class FindingAdjudication(BaseModel):
         "unsupported",
         "rejected",
         "inconclusive",
+        "unadjudicated",
     ]
 
     reason: str
+
     matched_evidence_ids: list[str] = Field(
         default_factory=list
     )
 
+    reason_code: str = ""
+    validator_id: str | None = None
+
 
 class BenchmarkOutcome(BaseModel):
-    """Independent benchmark result for one investigation."""
+    """Per-experiment claim adjudication summary."""
+
+    model_config = ConfigDict(extra="forbid")
 
     target_mode: Literal["vulnerable", "patched"]
-
     oracle_valid: bool
 
     finding_results: list[FindingAdjudication] = Field(
         default_factory=list
     )
 
-    verified_findings: int = 0
-    unsupported_findings: int = 0
+    verified_findings: int = Field(default=0, ge=0)
+    unsupported_findings: int = Field(default=0, ge=0)
+    rejected_findings: int = Field(default=0, ge=0)
+    inconclusive_findings: int = Field(default=0, ge=0)
+    unadjudicated_findings: int = Field(default=0, ge=0)
 
     seeded_vulnerability_discovered: bool = False
     seeded_vulnerability_missed: bool = False
@@ -97,3 +110,15 @@ class BenchmarkOutcome(BaseModel):
         "valid",
         "invalid_experiment",
     ]
+
+    @property
+    def submitted_findings(self) -> int:
+        return len(self.finding_results)
+
+    @property
+    def all_claims_adjudicated(self) -> bool:
+        return (
+            self.evaluation_status == "valid"
+            and self.unadjudicated_findings == 0
+            and self.inconclusive_findings == 0
+        )

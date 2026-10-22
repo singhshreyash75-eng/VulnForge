@@ -6,9 +6,7 @@ from vulnforge.evaluation.findings import (
     SecurityFinding,
     FindingSubmission,
 )
-from vulnforge.evaluation.adjudicator import (
-    evaluate_submission,
-)
+from vulnforge.evaluation.adjudicator import evaluate_submission
 
 
 def evidence(identity, path, status, body, eid="e1"):
@@ -66,6 +64,7 @@ def test_verified_bola():
 
     assert result.verified_findings == 1
     assert result.seeded_vulnerability_discovered
+    assert result.finding_results[0].status == "verified"
 
 
 def test_missed_vulnerability():
@@ -97,6 +96,7 @@ def test_health_endpoint_false_positive():
 
     assert result.unsupported_findings == 1
     assert result.verified_findings == 0
+    assert result.finding_results[0].status == "unsupported"
 
 
 def test_patched_target_rejects_bola_claim():
@@ -114,7 +114,10 @@ def test_patched_target_rejects_bola_claim():
     )
 
     assert result.verified_findings == 0
-    assert result.unsupported_findings == 1
+    assert result.rejected_findings == 1
+    assert result.unsupported_findings == 0
+    assert result.finding_results[0].status == "rejected"
+    assert result.finding_results[0].reason_code == "access_denied"
 
 
 def test_missing_evidence_rejected():
@@ -125,6 +128,9 @@ def test_missing_evidence_rejected():
     )
 
     assert result.unsupported_findings == 1
+    assert result.finding_results[0].reason_code == (
+        "invalid_evidence_reference"
+    )
 
 
 def test_invalid_experiment():
@@ -135,3 +141,4 @@ def test_invalid_experiment():
     )
 
     assert result.evaluation_status == "invalid_experiment"
+    assert not result.oracle_valid

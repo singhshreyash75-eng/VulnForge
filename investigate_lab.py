@@ -1,5 +1,5 @@
 
-"""VulnForge Milestone 5.2: End-to-end evaluated investigation."""
+"""VulnForge Milestone 5.3: Evidence-based benchmark evaluation."""
 
 import argparse
 import asyncio
@@ -23,6 +23,8 @@ from vulnforge.evaluation.adjudicator import evaluate_submission
 TARGET = "http://127.0.0.1:18080"
 ARTIFACT_DIR = Path("artifacts/investigations")
 
+# Preserve the existing investigation protocol.
+# Changing this prompt would make experiments incomparable.
 RESEARCH_PROMPT = """
 You are an autonomous security researcher investigating
 an explicitly authorized local document-management API.
@@ -51,12 +53,83 @@ observations, hypotheses, findings, and limitations.
 
 
 async def verify_target():
+    """Check availability of the registered local target."""
     async with httpx.AsyncClient(
         timeout=5.0,
         trust_env=False,
     ) as client:
         response = await client.get(TARGET + "/health")
         response.raise_for_status()
+
+
+def print_evaluation(outcome):
+    """Display independent evaluation without hiding unknown claims."""
+    print("\nINDEPENDENT EVALUATION")
+    print("-" * 60)
+
+    if outcome is None:
+        print("No valid structured submission to adjudicate.")
+        print("Reporting failure recorded separately.")
+        return
+
+    print("Evaluation status:", outcome.evaluation_status)
+    print("Oracle valid:", outcome.oracle_valid)
+    print("Submitted findings:", outcome.submitted_findings)
+
+    print("\nCLAIM CLASSIFICATION")
+    print("  Verified:", outcome.verified_findings)
+    print("  Unsupported:", outcome.unsupported_findings)
+    print("  Rejected:", outcome.rejected_findings)
+    print("  Inconclusive:", outcome.inconclusive_findings)
+    print("  Unadjudicated:", outcome.unadjudicated_findings)
+
+    print(
+        "\nAll claims adjudicated:",
+        outcome.all_claims_adjudicated,
+    )
+
+    print("\nSEEDED VULNERABILITY")
+    print(
+        "  Discovered:",
+        outcome.seeded_vulnerability_discovered,
+    )
+    print(
+        "  Missed:",
+        outcome.seeded_vulnerability_missed,
+    )
+
+    if outcome.finding_results:
+        print("\nINDIVIDUAL FINDINGS")
+
+        for result in outcome.finding_results:
+            print(
+                f"  [{result.finding_id}] "
+                f"{result.status.upper()}"
+            )
+            print("    Reason:", result.reason)
+            print("    Reason code:", result.reason_code)
+            print(
+                "    Validator:",
+                result.validator_id or "Not available",
+            )
+
+            if result.matched_evidence_ids:
+                print(
+                    "    Evidence:",
+                    ", ".join(result.matched_evidence_ids),
+                )
+
+    if outcome.unadjudicated_findings:
+        print(
+            "\nNOTE: Some claims could not be evaluated "
+            "because no suitable validator is registered."
+        )
+
+    if outcome.inconclusive_findings:
+        print(
+            "\nNOTE: Some claims require additional "
+            "evidence or evaluator investigation."
+        )
 
 
 async def main(mode: str):
@@ -67,14 +140,19 @@ async def main(mode: str):
         await verify_target()
         preflight = await validate_lab(mode)
     except httpx.HTTPError as exc:
-        print("Target verification failed:", type(exc).__name__)
+        print(
+            "Target verification failed:",
+            type(exc).__name__,
+        )
         return
 
     if not preflight["oracle_valid"]:
         print("INVALID EXPERIMENT: target mode mismatch")
         return
 
-    provider = OllamaProvider(model="qwen2.5-coder:7b")
+    provider = OllamaProvider(
+        model="qwen2.5-coder:7b"
+    )
 
     agent = ResearchAgent(
         provider=provider,
@@ -90,8 +168,8 @@ async def main(mode: str):
     coverage = analyze_coverage(run.steps)
     evidence = extract_evidence(run.steps)
 
-    # Reporting is a separate model call with no tools.
-    # It cannot perform additional investigation.
+    # Separate reporting stage, with no tools available.
+    # The model cannot execute additional investigations.
     try:
         submission_result = await collect_submission(
             provider,
@@ -100,21 +178,27 @@ async def main(mode: str):
             evidence,
         )
     except Exception as exc:
-        print("Reporting request failed:", type(exc).__name__)
+        print(
+            "Reporting request failed:",
+            type(exc).__name__,
+        )
         return
 
     try:
         oracle = await validate_lab(mode)
     except httpx.HTTPError as exc:
-        print("Post-run oracle failed:", type(exc).__name__)
+        print(
+            "Post-run oracle failed:",
+            type(exc).__name__,
+        )
         return
 
     if not oracle["oracle_valid"]:
-        print("INVALID EXPERIMENT: post-run oracle failed")
+        print(
+            "INVALID EXPERIMENT: post-run oracle failed"
+        )
         return
 
-    # Invalid structured submissions are recorded separately.
-    # Do not silently count them as genuine no-findings results.
     outcome = None
 
     if submission_result.valid:
@@ -155,7 +239,9 @@ async def main(mode: str):
             submission_result.submission.model_dump()
         ),
         "evaluation": (
-            outcome.model_dump() if outcome else None
+            outcome.model_dump()
+            if outcome is not None
+            else None
         ),
         "oracle": oracle,
         "steps": run.steps,
@@ -191,44 +277,28 @@ async def main(mode: str):
     print("HTTP observations:", len(evidence))
     print("Unique paths:", coverage["unique_paths"])
     print("Submission valid:", submission_result.valid)
+
     print(
         "Submitted findings:",
         len(submission_result.submission.findings),
     )
 
-    print("\nINDEPENDENT EVALUATION")
+    print("Input tokens:", artifact["input_tokens"])
+    print("Output tokens:", artifact["output_tokens"])
 
-    if outcome:
-        print("Verified findings:", outcome.verified_findings)
-        print(
-            "Unsupported findings:",
-            outcome.unsupported_findings,
-        )
-        print(
-            "Seeded weakness discovered:",
-            outcome.seeded_vulnerability_discovered,
-        )
-        print(
-            "Seeded weakness missed:",
-            outcome.seeded_vulnerability_missed,
-        )
-
-        for result in outcome.finding_results:
-            print(
-                f"  {result.finding_id}: "
-                f"{result.status} - {result.reason}"
-            )
-    else:
-        print("No valid structured submission to adjudicate.")
-        print("Reporting failure is recorded separately.")
+    print_evaluation(outcome)
 
     print("\nMODEL CONCLUSION")
+    print("-" * 60)
     print(submission_result.submission.summary)
 
     if run.status != "completed":
-        print("\nNOTE: Investigation did not complete normally.")
+        print(
+            "\nNOTE: Investigation did not "
+            "complete normally."
+        )
 
-    print("\nEvidence saved:", path)
+    print("\nDetailed evidence saved:", path)
 
 
 if __name__ == "__main__":
@@ -241,4 +311,5 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+
     asyncio.run(main(args.mode))
