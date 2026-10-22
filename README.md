@@ -14,21 +14,44 @@
 
 ## 01. Overview
 
-**VulnForge** is an independent research and engineering project exploring the intersection of artificial intelligence, autonomous agents, vulnerability research, and offensive cybersecurity.
+**VulnForge** is an independent offensive-AI-security research and engineering project exploring the intersection of autonomous agents, software vulnerability discovery, controlled exploitation research, and empirical security benchmarking.
 
-The central idea is straightforward:
+The central question is:
 
 > Can an AI model operate as an independent security researcher—observing an unfamiliar software environment, identifying weaknesses, developing hypotheses, selecting appropriate tests, interpreting evidence, and validating vulnerabilities without relying entirely on predefined scanning signatures?
 
 VulnForge aims to investigate this question experimentally.
 
-Rather than functioning as a conventional vulnerability scanner or a chatbot that explains security findings, the framework is being designed around **model-directed security investigation**.
+Unlike conventional vulnerability scanners or LLM-powered security assistants that summarize scanner output, VulnForge is designed around **model-directed, observation-driven security investigation**.
 
-Different AI models will receive equivalent experimental conditions and independently investigate intentionally vulnerable software environments.
+Different AI models will independently investigate software environments under equivalent experimental conditions. Their performance will be measured through actual security outcomes, independently verified evidence, and reproducible experiments.
 
-Their performance will be measured through observable security outcomes rather than subjective assessments of general intelligence.
+### Beyond a Single Vulnerable Application
 
-The project is currently under active development. Its initial provider adapters, typed contracts, controlled agent-loop foundation, and offline tests have been implemented. Full autonomous vulnerability discovery and independent validation remain development objectives.
+The research vision extends beyond testing a single intentionally vulnerable application.
+
+VulnForge is being developed toward a **multi-target benchmark corpus** incorporating:
+
+- Intentionally vulnerable software applications.
+- Patched and non-vulnerable application variants.
+- Historical vulnerable versions of real-world open-source software.
+- Reproducible applications derived from documented security weaknesses.
+- Labeled vulnerability-detection datasets.
+- Previously unseen seeded security challenges.
+
+This allows the framework to investigate not only whether an AI model discovers a vulnerability, but also whether it correctly rejects unsupported hypotheses when no known vulnerability is present.
+
+**The objective is to evaluate autonomous security-research capability—not merely vulnerability-report generation.**
+
+### Current Development State
+
+VulnForge is under active development.
+
+Its Python research-engine foundation, model-provider adapters, controlled multi-turn execution, local Qwen integration, and initial Docker-based vulnerability laboratory have been implemented.
+
+The first local model-driven tool-execution experiment has succeeded. The initial vulnerable and patched application modes have also been exercised through integration tests.
+
+Full autonomous vulnerability discovery, independent finding adjudication, multi-target benchmarking, and cloud-model comparisons remain ongoing development objectives.
 
 ---
 
@@ -36,46 +59,69 @@ The project is currently under active development. Its initial provider adapters
 
 ### The Changing Security Landscape
 
-Modern software is increasingly interconnected, API-driven, and dependent on complex identity, authorization, and application workflows.
+Modern software ecosystems are increasingly interconnected, API-driven, and dependent on complex authentication, authorization, and application workflows.
 
-At the same time, advances in large language models are creating a new class of software systems capable of planning, using tools, interpreting observations, and performing multi-step tasks.
+At the same time, advances in large language models are enabling systems that can reason about unfamiliar environments, select tools, execute multi-step workflows, and adapt their behavior based on observations.
 
-These capabilities introduce an important question for cybersecurity research:
+These capabilities raise a fundamental cybersecurity question:
 
-**What happens when the ability to investigate software vulnerabilities becomes increasingly autonomous?**
+**What happens when vulnerability investigation becomes increasingly autonomous?**
 
-Traditional security automation is generally built around predefined rules, signatures, heuristics, and scripted workflows.
+Traditional security automation relies heavily on predefined signatures, scripted checks, heuristics, and known vulnerability patterns.
 
 Autonomous AI systems introduce a different possibility.
 
-A model may be capable of examining an unfamiliar application, reasoning about its behavior, proposing security hypotheses, and adapting its investigation based on observed results.
+Instead of merely executing predefined tests, an AI model may be capable of:
 
-However, generating a convincing vulnerability explanation is fundamentally different from discovering a real vulnerability.
+- Inspecting unfamiliar software interfaces.
+- Understanding application functionality.
+- Reasoning about potential security weaknesses.
+- Developing vulnerability hypotheses.
+- Selecting context-appropriate security tests.
+- Interpreting HTTP responses and runtime observations.
+- Adapting investigative strategies.
+- Producing evidence-backed security findings.
 
-Likewise, producing a plausible proof of concept is not equivalent to demonstrating exploitability.
+However, the ability to generate plausible security explanations does not necessarily imply the ability to discover or validate genuine vulnerabilities.
 
-VulnForge is motivated by the need to evaluate these distinctions through reproducible experimentation.
+A model may confidently report a nonexistent vulnerability, overlook an exploitable weakness, misunderstand application behavior, or fail to execute a technically valid test.
 
-### Real-World Security Implications
+**VulnForge is motivated by the need to measure these differences objectively.**
 
-The growing use of AI in cybersecurity raises questions about both legitimate security research and the potential misuse of increasingly capable autonomous systems.
+### AI-Assisted Offensive Security and Real-World Implications
 
-Examples of relevant research concerns include:
+The security community is increasingly examining the implications of AI-assisted offensive operations, autonomous vulnerability discovery, and agentic security tooling.
 
-- AI-assisted vulnerability discovery in unfamiliar software.
-- Automated reasoning about exposed application interfaces.
-- Multi-step investigation of authentication and authorization weaknesses.
-- AI-generated security test cases and proof-of-concept candidates.
-- Adaptive investigation based on runtime feedback.
-- The reliability of autonomous vulnerability claims.
-- The possibility of increasingly scalable AI-assisted offensive operations.
-- The security consequences of autonomous agents interacting with external tools and APIs.
+Relevant concerns include:
 
-These developments deserve rigorous empirical study.
+- AI-assisted reconnaissance and application inspection.
+- Automated vulnerability hypothesis generation.
+- Model-directed security test selection.
+- Adaptive investigation of authentication and authorization weaknesses.
+- AI-generated proof-of-concept candidates.
+- Multi-step vulnerability reasoning.
+- The reliability of model-generated security findings.
+- Potential scaling of AI-assisted offensive workflows.
+- The risks introduced by autonomous agents with executable tools.
+- The implications of increasingly accessible offensive automation.
 
-**VulnForge does not assume that current AI models can reliably perform these tasks. Its purpose is to test what they can actually accomplish, where they fail, and how their behavior differs.**
+These developments raise important questions for both offensive and defensive security research.
 
-All active security testing is restricted to isolated, intentionally vulnerable, or explicitly authorized environments.
+Could autonomous models discover weaknesses that conventional scanners miss?
+
+Could smaller open-weight models perform meaningful vulnerability research without expensive cloud infrastructure?
+
+Could an autonomous model distinguish a genuine security weakness from an apparently suspicious but secure application behavior?
+
+And how should security researchers objectively evaluate these capabilities?
+
+VulnForge approaches these questions as **testable research hypotheses**, not predetermined conclusions.
+
+The framework does not assume that any model is inherently effective at offensive security.
+
+Its purpose is to measure what models can accomplish, where they fail, and how reliably their findings can be independently verified.
+
+All active experiments are restricted to controlled, isolated, or explicitly authorized environments.
 
 ---
 
@@ -83,49 +129,67 @@ All active security testing is restricted to isolated, intentionally vulnerable,
 
 The primary hypothesis behind VulnForge is:
 
-> **Given equivalent tools, environmental access, operational constraints, and evaluation criteria, different AI models will demonstrate measurable differences in their ability to autonomously discover, investigate, and independently validate software vulnerabilities.**
+> **Given equivalent tools, environmental access, operational constraints, and evaluation criteria, different AI models will demonstrate measurable differences in their ability to autonomously discover, investigate, and independently validate software vulnerabilities across both vulnerable and non-vulnerable software environments.**
 
-This hypothesis contains several important research questions.
+This hypothesis is divided into several research questions.
 
-**H1 — Autonomous Discovery**
+### H1 — Autonomous Vulnerability Discovery
 
-Can an AI model identify a previously undisclosed-to-the-model vulnerability in an unfamiliar application without being given its exact location?
+Can an AI model identify a vulnerability in an unfamiliar software environment without being told its exact location or implementation?
 
-**H2 — Adaptive Investigation**
+### H2 — Adaptive Investigation
 
-Can a model modify its testing strategy based on observations rather than following a fixed sequence of predefined checks?
+Can a model modify its investigation strategy based on observed application behavior instead of following a fixed sequence of predefined tests?
 
-**H3 — Evidence-Based Verification**
+### H3 — Evidence-Based Verification
 
-Can an autonomous system distinguish a plausible vulnerability hypothesis from a security weakness supported by reproducible evidence?
+Can an autonomous system distinguish between a plausible vulnerability hypothesis and a security weakness supported by reproducible technical evidence?
 
-**H4 — Model Capability Variance**
+### H4 — False-Positive Resistance
 
-How do frontier and locally executed open-weight models differ in discovery accuracy, tool usage, investigation depth, false positives, and resource efficiency?
+Can an AI model recognize secure application behavior and avoid reporting unsupported vulnerabilities?
 
-**H5 — Operational Efficiency**
+### H5 — Model Capability Variance
 
-How much time, computation, token consumption, and API expenditure are required for a model to produce independently verified findings?
+How do frontier and locally executed open-weight models differ in discovery accuracy, investigation depth, tool-selection quality, false-positive rates, and autonomous task completion?
 
-**H6 — Generalization**
+### H6 — Operational Efficiency
 
-Can models transfer their investigative capabilities across different vulnerability classes, software architectures, and previously unseen seeded defects?
+How much time, computation, token consumption, and API expenditure are required to produce independently verified findings?
 
-These hypotheses will be evaluated progressively as the framework develops.
+### H7 — Cross-Target Generalization
 
-No hypothesis is considered validated merely because a model generates a convincing explanation.
+Can models transfer their investigative capabilities across different application architectures, vulnerability categories, historical software versions, and previously unseen targets?
+
+### H8 — Tool-Calling Reliability
+
+How reliably can models generate valid tool requests, interpret execution results, and complete multi-step investigations under restricted execution policies?
+
+### H9 — Vulnerability Prevalence and Investigation Behavior
+
+How does model behavior change when an investigated target contains no known vulnerability?
+
+Does the model terminate with an evidence-based inconclusive result, correctly reject a hypothesis, or manufacture an unsupported finding?
+
+### H10 — Frontier vs Open-Weight Research Capability
+
+Under clearly documented hardware and resource constraints, how do local open-weight models compare with cloud-hosted frontier models in verified security outcomes and cost efficiency?
+
+These hypotheses will be evaluated progressively.
+
+**A model's confidence, reasoning narrative, or generated proof of concept is not sufficient evidence of successful vulnerability discovery.**
 
 ---
 
 ## 04. Research Philosophy
 
-VulnForge follows five engineering principles.
+VulnForge follows six engineering and research principles.
 
 ### Autonomy Over Static Automation
 
 The model should make meaningful investigative decisions.
 
-It should determine what to inspect, what hypotheses to pursue, which permitted tests to execute, and whether additional evidence is required.
+It should determine what to inspect, which hypotheses to pursue, what permitted tests to execute, and whether additional investigation is justified.
 
 ### Evidence Over Assertions
 
@@ -135,23 +199,29 @@ Findings must be supported by objective observations, controlled reproduction, a
 
 ### Reproducibility Over Demonstration-Only Results
 
-Experiments should be repeatable with documented configurations, target states, model versions, and execution budgets.
+Experiments should be repeatable with documented model versions, target configurations, execution limits, software dependencies, and environmental conditions.
 
-### Measurement Over Model Rankings
+### Measurement Over Arbitrary Rankings
 
-No single arbitrary score can adequately represent security-research capability.
+No single composite score adequately represents autonomous security-research capability.
 
-Discovery accuracy, verification success, false positives, runtime, cost, and resource consumption should remain separately measurable.
+Discovery effectiveness, false positives, verification success, runtime, token usage, and cost should remain separately measurable.
+
+### Generalization Over Benchmark Memorization
+
+The framework should evaluate models on unfamiliar targets and previously unseen security challenges wherever possible.
+
+Historical vulnerabilities and public benchmark datasets are valuable, but results must account for possible training-data contamination.
 
 ### Controlled Research Over Unrestricted Exploitation
 
-Autonomous testing must operate within explicit authorization boundaries, restricted tool interfaces, and isolated experimental environments.
+Autonomous security testing must operate within explicit authorization boundaries, restricted tools, isolated environments, and auditable execution policies.
 
 ---
 
 ## 05. The Autonomous Research Lifecycle
 
-The intended investigation process follows eight stages:
+VulnForge is designed around the following research process:
 
 **Observe → Analyze → Hypothesize → Plan → Test → Validate → Adapt → Report**
 
@@ -166,142 +236,318 @@ The intended investigation process follows eight stages:
 | Adapt | Refine investigation based on results |
 | Report | Produce structured technical findings |
 
-The research agent will be responsible for selecting investigative actions.
+The model is responsible for investigative decisions.
 
-Deterministic software components will enforce execution policies, manage experiments, preserve evidence, and independently evaluate results.
+Deterministic software components are responsible for execution boundaries, experiment orchestration, evidence preservation, and independent validation.
 
-This separation is essential for producing trustworthy benchmarks.
+A model may conclude that:
+
+- A vulnerability is supported by available evidence.
+- A suspected vulnerability is not reproducible.
+- The observed behavior appears consistent with expected security controls.
+- The available evidence is insufficient to reach a conclusion.
+
+**An investigation that produces no vulnerability finding is not automatically a failed experiment.**
+
+Likewise, the absence of a reported vulnerability does not prove that an unfamiliar application is secure.
 
 ---
 
 ## 06. Proposed System Architecture
 
 ```text
-                    RESEARCHER / OPERATOR
-                              |
-                              v
-                     EXPERIMENT MANAGER
-                              |
-                              v
-                     MULTI-MODEL ROUTER
-                              |
-                +-------------+-------------+
-                |             |             |
-                v             v             v
-             OpenAI         Claude      Open-Weight
-                |             |             |
-                +-------------+-------------+
-                              |
-                              v
-                   AUTONOMOUS RESEARCH AGENT
-                              |
-                              v
-                    CONTROLLED TOOL GATEWAY
-                              |
-                              v
-                     ISOLATED TARGET LAB
-                              |
-                              v
-                       EVIDENCE STORE
-                              |
-                              v
-                    INDEPENDENT VALIDATOR
-                              |
-                              v
-                     BENCHMARKING ENGINE
-                              |
-                              v
-                      RESEARCH REPORTS
+                     RESEARCHER / OPERATOR
+                               |
+                               v
+                      EXPERIMENT MANAGER
+                               |
+                               v
+                    BENCHMARK CORPUS MANAGER
+                               |
+               +---------------+---------------+
+               |               |               |
+               v               v               v
+          Seeded Labs     Historical CVEs   Labeled Datasets
+               |               |               |
+               +---------------+---------------+
+                               |
+                               v
+                       TARGET SANDBOX
+                               |
+                               v
+                       MULTI-MODEL ROUTER
+                               |
+            +------------------+------------------+
+            |                  |                  |
+            v                  v                  v
+          OpenAI             Claude             Gemini
+            |                  |                  |
+            +------------------+------------------+
+                               |
+                          Open-Weight
+                         Qwen / Ollama
+                               |
+                               v
+                    AUTONOMOUS RESEARCH AGENT
+                               |
+                               v
+                     CONTROLLED TOOL GATEWAY
+                               |
+                               v
+                    ISOLATED TARGET INSTANCE
+                               |
+                               v
+                         EVIDENCE STORE
+                               |
+                               v
+                     INDEPENDENT VALIDATOR
+                               |
+                               v
+                      BENCHMARKING ENGINE
+                               |
+                               v
+                       RESEARCH REPORTS
 ```
 
-This represents the intended architecture, not a claim that every component is already implemented.
+The diagram represents the intended architecture. It does not imply that every component is currently implemented.
 
-The system is being developed as a modular Python application rather than a collection of independently deployed services.
+Each model will conduct an independent experiment against a freshly initialized target environment.
+
+The benchmark corpus manager will maintain target metadata, software versions, execution configurations, and evaluator-only ground truth.
+
+The research agent will interact with the target through a policy-enforced tool gateway.
+
+The independent validator will determine whether submitted findings correspond to objectively reproducible security weaknesses.
+
+The benchmarking engine will compare experimental outcomes without collapsing every measurement into one arbitrary ranking.
+
+VulnForge is being developed as a modular Python application, not a collection of premature microservices.
 
 ---
 
 ## 07. Multi-Model Research
 
-The initial experimental design targets three model categories.
+The expanded experimental architecture targets four model-provider families.
 
-| Model category | Provider | Purpose |
+| Model category | Provider | Research purpose |
 |---|---|---|
-| Frontier model | OpenAI | Cloud-based autonomous security investigation |
-| Frontier model | Anthropic Claude | Independent cloud-model comparison |
-| Open-weight model | Qwen Coder via Ollama | Locally executed research baseline |
+| Frontier model | OpenAI | Autonomous security investigation and tool-use evaluation |
+| Frontier model | Anthropic Claude | Independent frontier-model comparison |
+| Frontier model | Google Gemini | Additional model-family comparison |
+| Open-weight model | Qwen via Ollama | Locally executed security-research baseline |
 
-The initial local model candidate is **Qwen2.5-Coder 7B Instruct**, selected for practical execution on an Apple Silicon machine with 16 GB unified memory.
+### Local Open-Weight Baseline
 
-The framework is designed around a standardized model-provider interface.
+The initial local model is **Qwen2.5-Coder 7B Instruct**, executed through Ollama on Apple Silicon hardware with 16 GB unified memory.
 
-This allows models to be replaced without rewriting the central research engine.
+This model provides a practical baseline for investigating how a smaller locally executed coding model performs relative to cloud-hosted frontier systems.
 
-Provider-specific behavior, tool-call formats, usage accounting, and response structures are normalized before being processed by the agent.
+The local configuration also enables development and debugging without per-token cloud API expenditure.
 
-The initial benchmark will compare three selected model configurations, not attempt to establish a universal ranking of AI systems.
+### Standardized Provider Interface
+
+The framework uses a common provider contract to normalize:
+
+- Model identification.
+- Structured responses.
+- Tool-call requests.
+- Tool-result messages.
+- Token accounting.
+- Provider-specific response formats.
+- Execution errors.
+- Model configuration metadata.
+
+The provider abstraction allows model implementations to be changed without rewriting the research engine.
+
+### Tool-Calling Compatibility
+
+Early local experiments identified a distinction between selecting a correct tool and generating a correctly structured tool call.
+
+The initial Qwen configuration produced valid-looking tool requests as JSON text rather than native structured tool-call objects.
+
+A controlled JSON normalization fallback was subsequently introduced.
+
+This motivates separate evaluation of:
+
+**Tool-selection accuracy:** Whether a model selects an appropriate investigative tool.
+
+**Tool-call compliance:** Whether a model follows the required invocation protocol.
+
+Native tool calling and compatibility-fallback behavior should be recorded separately during formal benchmarking.
+
+### Experimental Fairness
+
+Models will receive equivalent logical tool capabilities, target access, and evaluation criteria.
+
+However, frontier and open-weight models may differ substantially in model size, inference hardware, context windows, and operating costs.
+
+These differences will be documented rather than ignored.
+
+The project does not aim to establish a universal ranking of AI models.
 
 ---
 
-## 08. Experimental Design
+## 08. Experimental Design & Benchmark Corpus
 
-The first major experiment will involve one intentionally vulnerable local application.
+VulnForge is evolving toward a reusable benchmark corpus containing multiple target types and security conditions.
 
-Each model will independently investigate the same target.
+The benchmark corpus is intended to support both runtime vulnerability investigation and labeled vulnerability-detection experiments.
 
-To improve experimental fairness:
+### Track A — Controlled Vulnerability Laboratories
 
-1. Each experiment begins from a reset target state.
-2. Models receive equivalent task instructions.
-3. Models receive the same logical tool capabilities.
-4. Execution limits are standardized.
-5. Observations and actions are recorded.
-6. Findings are evaluated by an independent validation mechanism.
-7. Results are compared using separately reported metrics.
+Intentionally vulnerable applications executed in isolated environments.
 
-The initial target will focus on an authorization weakness such as Broken Object Level Authorization (BOLA/IDOR), using synthetic users and data.
+Examples include:
 
-The framework will eventually support multiple seeded vulnerabilities, patched controls, and unfamiliar benchmark targets.
+- Synthetic web applications.
+- Seeded API authorization defects.
+- Intentionally vulnerable training applications.
+- Patched versions of the same software.
+- Negative-control scenarios.
+
+These targets provide controlled conditions and clearly defined expected behavior.
+
+### Track B — Real-World-Derived Software
+
+Reproducible software environments derived from publicly documented vulnerabilities and historical open-source releases.
+
+Potential target sources include:
+
+- Historical vulnerable software versions.
+- Corresponding patched releases.
+- Documented CVE reproductions.
+- Open-source applications with reproducible security defects.
+- Software versions selected for controlled comparative analysis.
+
+These environments will be executed locally or within explicitly authorized research infrastructure.
+
+Public source availability does not automatically authorize active testing against a live deployment.
+
+### Track C — Labeled Security Datasets
+
+Established datasets may provide larger collections of known vulnerable and non-vulnerable examples.
+
+Candidate resources include:
+
+- OWASP Benchmark Project.
+- NIST Software Assurance Reference Dataset (SARD).
+- Juliet Test Suites.
+- Other reproducible, labeled software-security benchmarks.
+
+These datasets are particularly useful for vulnerability identification, classification, and false-positive evaluation.
+
+They are not automatically equivalent to runtime exploitability benchmarks.
+
+### Vulnerable and Non-Vulnerable Targets
+
+The corpus will intentionally include both positive and negative examples.
+
+| Target condition | Expected research behavior |
+|---|---|
+| Known vulnerability present | Investigate and identify supported findings |
+| Vulnerability patched | Avoid reporting the original weakness |
+| Secure negative control | Reject unsupported hypotheses |
+| Ambiguous behavior | Report uncertainty and limitations |
+| Unknown ground truth | Preserve evidence without claiming verified accuracy |
+
+This distinction is essential for measuring precision, recall, false-positive rates, and false-negative rates.
+
+### Independent Experiment Protocol
+
+Each model experiment should:
+
+1. Start from a reproducible target state.
+2. Receive equivalent instructions and permitted tools.
+3. Operate within standardized execution limits.
+4. Independently select investigative actions.
+5. Collect actual application observations.
+6. Submit structured findings.
+7. Have those findings independently validated.
+8. Preserve evidence and execution traces.
+9. Record token usage, runtime, and cost.
+10. Produce reproducible experimental results.
+
+Ground-truth labels and validator logic must remain inaccessible to the research agent during an experiment.
 
 ### Evidence Requirements
 
 A submitted finding should include:
 
-- A clearly stated vulnerability hypothesis.
-- The affected component or endpoint.
-- The permitted test methodology.
-- Relevant request and response evidence.
+- Vulnerability hypothesis.
+- Affected software component.
+- Relevant endpoint or functionality.
+- Test methodology.
+- Request and response evidence.
 - Observed security impact.
 - Reproduction conditions.
-- Independent validation outcome.
+- Verification outcome.
+- Limitations and uncertainty.
 
-A model's self-reported confidence is not sufficient to establish validity.
+A model-generated explanation alone does not constitute proof.
 
 ---
 
 ## 09. Benchmarking Dimensions
 
-VulnForge aims to evaluate autonomous security research across multiple independent dimensions.
+VulnForge aims to measure autonomous security research across independent evaluation dimensions.
 
 | Dimension | Research measurement |
 |---|---|
-| Discovery effectiveness | Number of genuine vulnerabilities identified |
-| Precision | Proportion of submitted findings that are valid |
-| False positives | Incorrect or unsupported vulnerability claims |
-| Verification | Independently confirmed findings |
-| Reproducibility | Consistency across repeated trials |
-| Autonomous behavior | Successful model-directed investigation |
-| Tool efficiency | Useful actions relative to total tool usage |
-| Time efficiency | Time required to produce verified findings |
+| Discovery effectiveness | Genuine vulnerabilities identified |
+| True positives | Correctly identified known vulnerabilities |
+| False positives | Unsupported or incorrect findings |
+| True negatives | Correctly rejected non-vulnerable cases |
+| False negatives | Known vulnerabilities not identified |
+| Precision | Valid findings relative to all reported findings |
+| Recall | Identified vulnerabilities relative to known positives |
+| False-positive rate | Incorrect positives relative to known negatives |
+| Verification success | Findings confirmed by independent validators |
+| Reproducibility | Consistency across repeated experiments |
+| Autonomous completion | Investigations completed without intervention |
+| Tool-selection quality | Relevance of selected investigative actions |
+| Tool-call compliance | Correct execution protocol usage |
+| Tool efficiency | Useful actions relative to total actions |
+| Time efficiency | Time required to complete an investigation |
 | Token consumption | Input and output token usage |
-| Monetary cost | API expenditure per experiment |
-| Resource consumption | Local compute and memory requirements |
-| Category performance | Results across vulnerability classes |
+| API cost | Monetary expenditure per experiment |
+| Compute requirements | Local memory and inference resources |
+| Category performance | Outcomes across vulnerability classes |
 
-Metrics will be defined precisely before formal benchmarking.
+### Core Classification Metrics
 
-Where ground-truth vulnerability labels are available, the evaluation may also measure recall.
+Where reliable ground truth is available:
 
-Initial experiments will be treated as exploratory results rather than statistically conclusive evidence.
+**Precision = TP / (TP + FP)**
+
+**Recall = TP / (TP + FN)**
+
+**False-Positive Rate = FP / (FP + TN)**
+
+**Accuracy = (TP + TN) / (TP + TN + FP + FN)**
+
+These measurements require clearly defined evaluation units and independently established labels.
+
+For unknown real-world software, an investigation producing no finding cannot automatically be counted as a true negative.
+
+### Repeated Trials
+
+Formal experiments should include repeated runs to evaluate variability.
+
+Where practical, the benchmark will record:
+
+- Model version and configuration.
+- Sampling parameters.
+- Context limits.
+- Experiment duration.
+- Tool budgets.
+- Target version.
+- Target initialization state.
+- Trial identifiers.
+- Independent verification results.
+
+Initial demonstrations will be treated as exploratory research.
+
+Larger-scale conclusions will require sufficiently diverse targets, repeated trials, and appropriate statistical analysis.
 
 ---
 
@@ -313,14 +559,19 @@ The current and proposed technology stack includes:
 |---|---|
 | Core language | Python 3.12+ |
 | Model integrations | OpenAI SDK, Anthropic SDK, Ollama |
+| Planned additional provider | Google GenAI SDK |
 | Data contracts | Pydantic |
-| HTTP operations | HTTPX |
+| HTTP investigation | HTTPX |
 | CLI | Typer |
 | Testing | pytest |
 | Package management | uv |
 | Isolated laboratories | Docker / Docker Compose |
-| Experiment storage | SQLite and structured JSON |
+| Vulnerable API targets | FastAPI |
+| Experiment storage | Structured JSON and planned SQLite |
 | Reporting | Markdown / JSON |
+| Future deployment | Containerized, access-controlled research environment |
+
+The project prioritizes maintainability, explicit interfaces, reproducibility, and testability.
 
 Technology choices may evolve as experimental requirements become clearer.
 
@@ -328,7 +579,7 @@ Technology choices may evolve as experimental requirements become clearer.
 
 ## 11. Current Development Status
 
-**Current development stage: v0.2.1 — Foundation and Agent Execution Infrastructure**
+**Current stage: Milestone 4 — Restricted HTTP Investigation Infrastructure**
 
 ### Implemented
 
@@ -338,26 +589,52 @@ Technology choices may evolve as experimental requirements become clearer.
 - [x] Anthropic provider adapter foundation.
 - [x] Ollama provider adapter foundation.
 - [x] CLI diagnostic functionality.
-- [x] Bounded multi-turn agent execution foundation.
+- [x] Bounded multi-turn research-agent foundation.
 - [x] Controlled tool registration and argument validation.
 - [x] Basic execution trace collection.
 - [x] Offline mocked-provider tests.
-- [x] Initial GitHub repository and version control.
+- [x] Local Qwen2.5-Coder 7B inference through Ollama.
+- [x] Live local-model tool-execution experiment.
+- [x] Strict JSON tool-call compatibility fallback.
+- [x] Docker-based synthetic document API.
+- [x] Vulnerable and patched application modes.
+- [x] Initial benchmark target manifest and evaluator ground truth.
+- [x] Initial Docker laboratory integration tests.
+- [x] GitHub version control and milestone-based commits.
 
-### Next Development Milestones
+### In Progress
 
-- [ ] Live local-model integration.
-- [ ] Live OpenAI and Anthropic provider verification.
-- [ ] Provider reliability and tool-calling compatibility tests.
-- [ ] Reproducible isolated vulnerable application.
-- [ ] Policy-enforced HTTP investigation tools.
-- [ ] Autonomous vulnerability investigation workflow.
-- [ ] Independent vulnerability verification oracle.
-- [ ] Experiment orchestration and reset mechanisms.
-- [ ] Structured benchmark data collection.
-- [ ] Comparative research report generation.
+- [ ] Restricted HTTP investigation tool integration.
+- [ ] Model-directed investigation of the real Docker target.
+- [ ] Structured HTTP evidence collection.
+- [ ] Independent vulnerability validation.
+- [ ] Patched-versus-vulnerable autonomous comparison.
 
-**Verification note:** The initial nine automated tests have passed in the local development environment. These tests validate foundation behavior, not real-world vulnerability discovery capability.
+### Planned
+
+- [ ] Live OpenAI API verification.
+- [ ] Live Anthropic Claude API verification.
+- [ ] Google Gemini provider integration.
+- [ ] Multi-model experiment orchestration.
+- [ ] Automated target initialization and reset.
+- [ ] Expanded benchmark corpus.
+- [ ] Historical vulnerable software targets.
+- [ ] Negative-control benchmark expansion.
+- [ ] Structured benchmark analytics.
+- [ ] Comparative technical reporting.
+- [ ] Controlled deployment environment.
+
+### Verification Notes
+
+The initial offline agent tests have passed.
+
+A local Qwen experiment successfully selected and executed a permitted simulated inspection tool, received the observation, and generated a final response.
+
+The initial Docker target has been exercised in vulnerable and patched modes using automated HTTP integration checks.
+
+These achievements validate important infrastructure components.
+
+They do not yet establish successful autonomous vulnerability discovery, multi-model benchmarking, or independently verified real-world security findings.
 
 ---
 
@@ -365,18 +642,29 @@ Technology choices may evolve as experimental requirements become clearer.
 
 | Phase | Focus | Intended outcome |
 |---|---|---|
-| Phase 1 | Foundation | Typed contracts, CLI, provider abstraction |
-| Phase 2 | Agent execution | Controlled multi-turn reasoning and tool usage |
-| Phase 3 | Model integration | Three operational model providers |
-| Phase 4 | Experimental laboratory | Reproducible vulnerable application |
-| Phase 5 | Autonomous investigation | Model-directed security testing |
-| Phase 6 | Independent validation | Evidence-backed vulnerability confirmation |
-| Phase 7 | Benchmarking | Repeated experiments and comparative metrics |
-| Phase 8 | Research reporting | Reproducible technical reports and analysis |
+| Phase 1 | Foundation | Python contracts, CLI, provider abstraction |
+| Phase 2 | Agent execution | Controlled multi-turn model-driven tool usage |
+| Phase 3 | Experimental laboratory | Docker target, vulnerable/patched modes, corpus metadata |
+| Phase 4 | Autonomous HTTP investigation | Real model-directed application inspection |
+| Phase 5 | Independent validation | Evidence-backed vulnerability adjudication |
+| Phase 6 | Cloud-model integration | OpenAI, Claude, and Gemini verification |
+| Phase 7 | Experiment orchestration | Independent runs, target resets, resource accounting |
+| Phase 8 | Expanded benchmark corpus | Multiple applications, negative controls, historical defects |
+| Phase 9 | Benchmarking and analytics | Repeated trials, comparative metrics, cost analysis |
+| Phase 10 | Reporting | Reproducible technical and research reports |
+| Phase 11 | Controlled deployment | Securely hosted research interface and isolated execution |
 
-Future research may expand toward web/API business-logic vulnerabilities, historical CVE benchmarks, source-code analysis, LLM application security, RAG systems, agentic AI security, MCP authorization boundaries, and multi-step security reasoning.
+### Initial Research Milestone
 
-These are research directions, not currently implemented capabilities.
+The first major research demonstration will compare selected AI models against the same controlled application.
+
+Each model will independently investigate the environment, submit evidence-backed findings, and have those findings independently evaluated.
+
+### Expanded Research Milestone
+
+The subsequent objective is to evaluate multiple models across a diverse corpus of vulnerable and non-vulnerable software environments.
+
+This will support investigation of generalization, false-positive resistance, repeatability, and performance across vulnerability categories.
 
 ---
 
@@ -387,9 +675,11 @@ These are research directions, not currently implemented capabilities.
 - Python 3.12+
 - Git
 - uv
+- Docker Desktop or compatible Docker Engine
+- Ollama for local inference
 - macOS or Linux development environment
 
-Docker and Ollama will be required for later local laboratory and model-inference milestones.
+Cloud API credentials are optional for the local development workflow.
 
 ### Clone
 
@@ -401,6 +691,7 @@ cd VulnForge
 ### Create an Environment
 
 ```bash
+uv python install 3.12
 uv venv --python 3.12 --managed-python .venv
 source .venv/bin/activate
 ```
@@ -417,15 +708,60 @@ uv pip install -e '.[dev]'
 vulnforge doctor
 ```
 
-### Run Tests
+### Run Offline Tests
 
 ```bash
-python -m pytest -q
+python -m pytest tests/test_agent.py tests/test_contracts.py tests/test_providers.py tests/test_transcripts.py -q
 ```
 
-At the current development stage, these commands verify the foundational framework.
+### Start the Local Model
 
-They do not launch a complete vulnerability research experiment.
+```bash
+ollama pull qwen2.5-coder:7b
+ollama serve
+```
+
+If Ollama is already running as a background service, starting another server process is unnecessary.
+
+### Start the Vulnerable Laboratory
+
+```bash
+LAB_MODE=vulnerable docker compose -f lab/docker-compose.yml up -d --build
+```
+
+Verify:
+
+```bash
+curl http://127.0.0.1:18080/health
+```
+
+### Run Laboratory Integration Tests
+
+```bash
+LAB_MODE=vulnerable python -m pytest tests/test_document_api.py -v
+```
+
+### Switch to Patched Mode
+
+```bash
+docker compose -f lab/docker-compose.yml down
+
+LAB_MODE=patched docker compose -f lab/docker-compose.yml up -d --force-recreate
+
+LAB_MODE=patched python -m pytest tests/test_document_api.py -v
+```
+
+### Local Agent Demonstration
+
+```bash
+python live_agent.py
+```
+
+This command runs the existing local model-driven simulated-tool demonstration.
+
+The real HTTP investigation workflow is being developed separately.
+
+**Development note:** Laboratory integration tests require the target application to be running in the corresponding mode. They should not be confused with offline unit tests.
 
 ---
 
@@ -433,46 +769,81 @@ They do not launch a complete vulnerability research experiment.
 
 VulnForge is intended exclusively for controlled security research, education, and explicitly authorized testing.
 
-The project is designed around the following constraints:
+The framework follows these principles:
 
 - Active testing is restricted to authorized targets.
-- Initial experiments use local, intentionally vulnerable environments.
-- Synthetic credentials and test data are used.
-- Tool execution is bounded and policy-controlled.
-- Network access is restricted to approved laboratory targets.
-- Destructive or self-propagating behavior is outside the project's scope.
+- Initial experiments use isolated software environments.
+- Synthetic credentials and data are used wherever possible.
+- Models interact through explicitly permitted tools.
+- Network destinations and execution capabilities are restricted.
+- Resource consumption and execution time are bounded.
+- Destructive and self-propagating behavior is excluded.
 - Security findings require independent verification.
-- Future external research must respect program scope and coordinated disclosure requirements.
+- External research must respect program authorization and disclosure requirements.
 
-The framework is not intended to provide unrestricted autonomous exploitation against third-party systems.
+### Real-World Software Research
+
+Historical vulnerable applications and open-source software may be downloaded and reproduced in local laboratory environments.
+
+The public availability of a repository, website, or API does not automatically authorize active vulnerability testing against its deployed infrastructure.
+
+Likewise, running an AI agent inside a sandbox does not automatically isolate an external website from that agent's requests.
+
+Future experiments will distinguish between locally reproduced software and explicitly authorized external targets.
+
+### Research Isolation
+
+The intended isolation architecture includes:
+
+- Registered target environments.
+- Restricted network access.
+- Allowlisted tool interfaces.
+- Controlled HTTP methods and destinations.
+- Execution budgets.
+- Resource limits.
+- Auditable experiment traces.
+- Environment resets between experiments.
+- Separation of agent-visible data and evaluator-only ground truth.
+
+Security controls will be tested independently rather than assumed effective because a container is present.
 
 ---
 
 ## 15. Research Questions for the Security Community
 
-Beyond implementation, VulnForge aims to contribute to broader discussions about the security implications of increasingly autonomous AI systems.
+VulnForge aims to contribute to broader discussions about the capabilities, limitations, and security implications of autonomous AI systems.
 
 Several questions motivate this work:
 
-**Can autonomous models discover security weaknesses that conventional scanners overlook?**
+**Can autonomous AI models discover genuine software vulnerabilities without predefined scanner signatures?**
 
-**How reliably can models reason about complex authorization and business-logic vulnerabilities?**
+**Can models identify business-logic and authorization weaknesses that require contextual reasoning?**
 
-**Does increased model capability translate into better verified security outcomes, or merely more convincing vulnerability narratives?**
+**How effectively can autonomous models investigate unfamiliar real-world-derived software?**
 
-**How much human intervention remains necessary for accurate autonomous security research?**
+**Do frontier models consistently outperform smaller open-weight models in verified security outcomes?**
 
-**Can independent validation mechanisms reduce hallucinated or unsupported findings?**
+**Can models reliably distinguish vulnerable software from patched or non-vulnerable applications?**
 
-**What experimental conditions are necessary for meaningful comparisons between frontier and open-weight models?**
+**How often do autonomous systems produce false-positive security findings?**
 
-**How might autonomous vulnerability research change the economics and accessibility of offensive security capabilities?**
+**Does increased model capability translate into better verified results, or merely more convincing vulnerability narratives?**
 
-**What technical safeguards are necessary when AI agents gain the ability to execute security-relevant tools?**
+**How much human intervention remains necessary for trustworthy autonomous security research?**
+
+**What experimental conditions are required for fair comparisons across different model providers?**
+
+**How should tool-calling reliability and investigation quality be measured independently?**
+
+**Can autonomous security-research systems become more cost-efficient without sacrificing verification quality?**
+
+**What safeguards are necessary as AI agents gain access to increasingly capable security tools?**
+
+**How might autonomous vulnerability discovery influence the future economics and accessibility of offensive security research?**
 
 These are open research questions.
 
-VulnForge will approach them through measured experimentation rather than assuming any particular conclusion.
+VulnForge will investigate them through controlled experiments, reproducible evidence, and transparent reporting.
 
 ---
 
@@ -480,24 +851,72 @@ VulnForge will approach them through measured experimentation rather than assumi
 
 The long-term objective is to develop a modular experimental framework capable of evaluating increasingly sophisticated autonomous security-research behavior.
 
-Potential research directions include:
+The framework should evolve from a single controlled demonstration into a reusable environment for comparative AI security research.
 
-- Multi-model vulnerability investigation.
-- Adaptive test generation.
+### Expanded Benchmarking
+
+Potential directions include:
+
+- Multi-application vulnerability benchmarks.
+- Historical CVE reproduction environments.
+- Vulnerable-versus-patched software comparisons.
+- Previously unseen seeded security challenges.
+- Secure negative-control targets.
+- Cross-model vulnerability corroboration.
+- Repeated experimental trials.
+- Model reliability and failure-mode analysis.
+
+### Advanced Autonomous Investigation
+
+Future capabilities may include:
+
+- Adaptive security test generation.
 - Multi-step attack-path reasoning.
 - Source-code and runtime analysis.
-- Autonomous investigation of LLM applications.
-- RAG security evaluation.
-- Agentic workflow and tool authorization testing.
-- MCP security research.
-- Reproducible historical vulnerability benchmarks.
-- Previously unseen seeded vulnerability challenges.
-- Cross-model evidence corroboration.
-- Hardware and firmware-oriented security experiments.
+- Web/API business-logic vulnerability research.
+- Context-aware authorization testing.
+- Evidence-driven hypothesis refinement.
+- Independent reproduction of model-generated findings.
 
-Each expansion will depend on successful validation of earlier capabilities.
+### AI Application Security
 
-The priority is technical correctness, measurable results, and reproducible research.
+Additional research directions include:
+
+- LLM application security.
+- Prompt-injection resilience.
+- RAG system security.
+- Agentic workflow security.
+- MCP and tool-authorization testing.
+- Cross-agent trust boundaries.
+- Model and tool-output manipulation research.
+
+### Future Deployment
+
+VulnForge may eventually be deployed as a controlled, self-hosted research environment.
+
+The intended deployment would provide:
+
+- An authenticated researcher interface.
+- Experiment configuration and execution.
+- Model selection.
+- Benchmark target selection.
+- Isolated target environments.
+- Controlled experiment monitoring.
+- Evidence and trace inspection.
+- Comparative result visualization.
+- Technical report access.
+
+Deployment must preserve isolation between the research interface, agent execution, target environments, and evaluator-only ground truth.
+
+The objective is to make experiments reproducible and accessible to authorized researchers—not to expose unrestricted autonomous testing capabilities.
+
+### Longer-Term Research
+
+Hardware and firmware-oriented security research may be explored after the software-based research framework has demonstrated reliable functionality.
+
+Every expansion will depend on successful verification of earlier capabilities.
+
+**The priority remains technical correctness, measurable outcomes, and reproducible research.**
 
 ---
 
@@ -522,6 +941,10 @@ Offensive AI Security · AI Red Teaming · Autonomous Vulnerability Research · 
 > The future of autonomous security research should not be evaluated by how convincingly an AI model describes vulnerabilities, but by whether it can independently discover, investigate, and validate them through reproducible evidence.
 
 **VulnForge is an attempt to turn that question into a measurable engineering experiment.**
+
+The project is built around a simple research principle:
+
+**Autonomy must be observable. Vulnerabilities must be verifiable. Benchmarks must be reproducible.**
 
 ---
 
