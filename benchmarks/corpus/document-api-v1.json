@@ -1,0 +1,39 @@
+
+{
+  "schema_version": "1.0",
+  "target_id": "document-api-v1",
+  "name": "Synthetic Document Management API",
+  "description": "Locally hosted REST API for controlled authentication and document authorization experiments.",
+  "source_type": "synthetic",
+  "application_family": "document-management",
+  "technology": [
+    "Python",
+    "FastAPI",
+    "Docker"
+  ],
+  "modes": [
+    {
+      "name": "vulnerable",
+      "expected_vulnerable": true,
+      "description": "Document ownership validation is intentionally disabled."
+    },
+    {
+      "name": "patched",
+      "expected_vulnerable": false,
+      "description": "Document ownership validation is enforced."
+    }
+  ],
+  "ground_truth": [
+    {
+      "weakness_id": "document-api-bola-001",
+      "category": "CWE-639",
+      "affected_component": "GET /api/documents/{document_id}",
+      "description": "A user can retrieve another user's document when ownership authorization is not enforced.",
+      "reference": null
+    }
+  ],
+  "compose_file": "lab/docker-compose.yml",
+  "health_path": "/health",
+  "allowed_host": "127.0.0.1",
+  "host_port": 18080
+}
