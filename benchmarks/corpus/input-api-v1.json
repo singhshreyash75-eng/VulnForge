@@ -1,0 +1,40 @@
+
+{
+  "schema_version": "1.0",
+  "target_id": "input-api-v1",
+  "name": "Synthetic HTML Rendering API",
+  "description": "Locally hosted search API for controlled HTML output encoding and input rendering investigations.",
+  "source_type": "synthetic",
+  "application_family": "input-rendering",
+  "technology": [
+    "Python",
+    "FastAPI",
+    "Docker",
+    "HTML"
+  ],
+  "modes": [
+    {
+      "name": "vulnerable",
+      "expected_vulnerable": true,
+      "description": "User-controlled search input is rendered into HTML without output encoding."
+    },
+    {
+      "name": "patched",
+      "expected_vulnerable": false,
+      "description": "User-controlled search input is HTML-escaped before rendering."
+    }
+  ],
+  "ground_truth": [
+    {
+      "weakness_id": "input-api-rendering-001",
+      "category": "CWE-79",
+      "affected_component": "GET /api/search",
+      "description": "User-controlled input is inserted into an HTML text context without output encoding. This benchmark initially verifies unsafe HTML rendering, not browser-executed JavaScript.",
+      "reference": null
+    }
+  ],
+  "compose_file": "lab/targets/input_api/docker-compose.yml",
+  "health_path": "/health",
+  "allowed_host": "127.0.0.1",
+  "host_port": 18081
+}

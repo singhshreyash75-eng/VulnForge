@@ -1,5 +1,5 @@
 
-"""VulnForge 6.5B-2: registry-backed experiment execution."""
+"""VulnForge 6.5C: registry-backed, run-linked experiment executor."""
 
 import asyncio
 import hashlib
@@ -7,7 +7,6 @@ import json
 import os
 import sys
 import time
-
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -24,12 +23,17 @@ INVESTIGATION_DIR = ROOT / "artifacts" / "investigations"
 SUPPORTED_MODEL = "qwen2.5-coder:7b"
 SUPPORTED_PROMPT = "structured_findings_v1"
 
+SUPPORTED_TARGETS = {
+    "document-api-v1",
+    "input-api-v1",
+}
+
 
 def validate_runner_config(config: ExperimentConfig) -> None:
-    """Reject configurations the existing agent cannot honor."""
+    """Reject configuration options the runner cannot honor."""
 
     if (
-        config.target_id != "document-api-v1"
+        config.target_id not in SUPPORTED_TARGETS
         or config.provider != "ollama"
         or config.model != SUPPORTED_MODEL
         or config.prompt_version != SUPPORTED_PROMPT
@@ -40,26 +44,24 @@ def validate_runner_config(config: ExperimentConfig) -> None:
         or config.seed is not None
     ):
         raise ValueError(
-            "The current investigation runner supports only "
-            "the approved Qwen document API protocol."
+            "Unsupported experiment configuration for "
+            "the current Qwen research protocol."
         )
 
 
 def resolve_target(config: ExperimentConfig):
-    """Resolve an approved registry-backed Docker target."""
+    """Resolve a trusted registry-backed target adapter."""
 
-    from vulnforge.corpus.adapters import (
-        create_target_adapter,
-    )
+    from vulnforge.corpus.adapters import create_target_adapter
 
     return create_target_adapter(
-        target_id=config.target_id,
-        mode=config.target_mode,
+        config.target_id,
+        config.target_mode,
     )
 
 
 def atomic_json(path: Path, payload: dict) -> None:
-    """Create a JSON result without overwriting an existing run."""
+    """Create a result file without overwriting earlier data."""
 
     path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -88,14 +90,30 @@ def atomic_json(path: Path, payload: dict) -> None:
 async def run_investigation(
     mode: str,
     timeout: float,
+    target_id: str = "document-api-v1",
+    run_id: str | None = None,
 ) -> dict:
-    """Run the existing research CLI with a time limit."""
+    """Execute the approved investigation CLI."""
 
-    process = await asyncio.create_subprocess_exec(
+    command = [
         sys.executable,
         str(ROOT / "investigate_lab.py"),
+        "--target",
+        target_id,
         "--mode",
         mode,
+    ]
+
+    if run_id is not None:
+        from uuid import UUID
+
+        if str(UUID(run_id)) != run_id:
+            raise ValueError("Noncanonical run ID")
+
+        command.extend(["--run-id", run_id])
+
+    process = await asyncio.create_subprocess_exec(
+        *command,
         cwd=str(ROOT),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
@@ -122,11 +140,25 @@ async def run_investigation(
     }
 
 
+def artifact_for_run(run_id: str) -> Path:
+    """Return the exact artifact path for a registered run."""
+
+    from uuid import UUID
+
+    if str(UUID(run_id)) != run_id:
+        raise ValueError("Invalid run ID")
+
+    return INVESTIGATION_DIR / f"{run_id}.json"
+
+
 def find_new_artifact(
     before: set[str],
     mode: str,
 ) -> Path | None:
-    """Find exactly one newly created investigation artifact."""
+    """Legacy helper retained for backward compatibility.
+
+    New automated executions must use artifact_for_run().
+    """
 
     if not INVESTIGATION_DIR.exists():
         return None
@@ -136,42 +168,52 @@ def find_new_artifact(
         for path in INVESTIGATION_DIR.glob(
             f"qwen_{mode}_*.json"
         )
-        if path.name not in before
-        and path.is_file()
+        if path.name not in before and path.is_file()
     ]
 
-    if len(candidates) != 1:
-        return None
-
-    return candidates[0]
+    return candidates[0] if len(candidates) == 1 else None
 
 
 def artifact_sha256(path: Path) -> str:
-    """Hash saved artifact bytes for result linkage."""
-
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def benchmark_is_valid(
     benchmark: dict,
     config: ExperimentConfig,
+    run_id: str | None = None,
 ) -> bool:
-    """Validate essential benchmark result fields."""
+    """Check essential benchmark integrity and identity fields."""
+
+    if not isinstance(benchmark, dict):
+        return False
 
     evaluation = benchmark.get("evaluation")
+    oracle = benchmark.get("oracle")
+
+    if not isinstance(evaluation, dict):
+        return False
+
+    if not isinstance(oracle, dict):
+        return False
+
+    if run_id is not None and benchmark.get("run_id") != run_id:
+        return False
 
     return (
-        benchmark.get("target_mode") == config.target_mode
-        and benchmark.get("target_id") == config.target_id
+        benchmark.get("target_id") == config.target_id
+        and benchmark.get("target_mode") == config.target_mode
         and benchmark.get("provider") == config.provider
         and benchmark.get("model") == config.model
         and benchmark.get("run_status") == "completed"
         and benchmark.get("integrity_valid") is True
         and benchmark.get("trace_matches_evidence") is True
         and benchmark.get("submission_valid") is True
-        and isinstance(evaluation, dict)
+        and oracle.get("oracle_valid") is True
+        and oracle.get("expected_mode") == config.target_mode
         and evaluation.get("evaluation_status") == "valid"
         and evaluation.get("oracle_valid") is True
+        and evaluation.get("target_mode") == config.target_mode
     )
 
 
@@ -181,7 +223,7 @@ async def execute_experiment(
     timeout: float = 900.0,
     cleanup: bool = True,
 ) -> dict:
-    """Execute one approved experiment and record its outcome."""
+    """Run one approved experiment and preserve its outcome."""
 
     validate_runner_config(config)
 
@@ -210,53 +252,43 @@ async def execute_experiment(
         RESULT_DIR / "results" / f"{manifest.run_id}.json"
     )
 
+    artifact_path = artifact_for_run(manifest.run_id)
+
     started_at = datetime.now(timezone.utc)
-    start_clock = time.monotonic()
+    clock = time.monotonic()
 
     status = "failed"
     error = None
     execution = None
-    artifact_path = None
-    artifact_digest = None
     benchmark = None
-    cleanup_error = None
+    artifact_digest = None
     target_verified = False
-
-    before = set()
-
-    if INVESTIGATION_DIR.exists():
-        before = {
-            path.name
-            for path in INVESTIGATION_DIR.glob(
-                f"qwen_{config.target_mode}_*.json"
-            )
-        }
+    cleanup_error = None
 
     try:
+        if artifact_path.exists():
+            raise FileExistsError(
+                "Artifact already exists for this run ID"
+            )
+
         await manager.reset(config.target_mode)
 
-        # Verify the actual authorization behavior, not just
-        # the application's health endpoint.
+        # Evaluator-side target verification.
         await manager.verify_mode(config.target_mode)
         target_verified = True
 
-        # Keep evaluator-only mode verification separate
-        # from the model's research observations.
         execution = await run_investigation(
             config.target_mode,
             timeout,
-        )
-
-        artifact_path = find_new_artifact(
-            before,
-            config.target_mode,
+            target_id=config.target_id,
+            run_id=manifest.run_id,
         )
 
         if execution["exit_code"] != 0:
             error = "investigation_process_failed"
 
-        elif artifact_path is None:
-            error = "investigation_artifact_missing_or_ambiguous"
+        elif not artifact_path.is_file():
+            error = "investigation_artifact_missing"
 
         else:
             benchmark = json.loads(
@@ -267,7 +299,11 @@ async def execute_experiment(
                 artifact_path
             )
 
-            if benchmark_is_valid(benchmark, config):
+            if benchmark_is_valid(
+                benchmark,
+                config,
+                run_id=manifest.run_id,
+            ):
                 status = "completed"
             else:
                 status = "invalid"
@@ -286,12 +322,12 @@ async def execute_experiment(
                 )
 
     result = {
-        "schema_version": "6.5B-2",
+        "schema_version": "6.5C-2C",
         "run_id": manifest.run_id,
         "manifest_path": str(manifest_path),
+        "config": config.model_dump(mode="json"),
         "config_fingerprint": config.fingerprint(),
         "corpus_fingerprint": adapter.corpus_fingerprint,
-        "config": config.model_dump(mode="json"),
         "target_id": adapter.target_id,
         "target_mode_verified": target_verified,
         "status": status,
@@ -301,11 +337,13 @@ async def execute_experiment(
             timezone.utc
         ).isoformat(),
         "duration_seconds": round(
-            time.monotonic() - start_clock,
+            time.monotonic() - clock,
             3,
         ),
         "artifact_path": (
-            str(artifact_path) if artifact_path else None
+            str(artifact_path)
+            if artifact_path.is_file()
+            else None
         ),
         "artifact_sha256": artifact_digest,
         "benchmark_summary": (
@@ -319,7 +357,7 @@ async def execute_experiment(
                     "deduplication"
                 ),
             }
-            if benchmark else None
+            if benchmark is not None else None
         ),
         "execution": execution,
         "cleanup_error": cleanup_error,

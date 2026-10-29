@@ -1,5 +1,5 @@
 
-"""Command-line interface for repeated VulnForge experiments."""
+"""Run repeated independent VulnForge benchmark trials."""
 
 import argparse
 import asyncio
@@ -10,7 +10,16 @@ from vulnforge.experiments.trials import run_trial_batch
 
 async def main():
     parser = argparse.ArgumentParser(
-        description="Run repeated independent VulnForge trials"
+        description="VulnForge multi-target repeated trials"
+    )
+
+    parser.add_argument(
+        "--target",
+        choices=[
+            "document-api-v1",
+            "input-api-v1",
+        ],
+        default="document-api-v1",
     )
 
     parser.add_argument(
@@ -18,16 +27,19 @@ async def main():
         choices=["vulnerable", "patched"],
         required=True,
     )
+
     parser.add_argument(
         "--trials",
         type=int,
         default=3,
     )
+
     parser.add_argument(
         "--timeout",
         type=float,
         default=900.0,
     )
+
     parser.add_argument(
         "--start-trial",
         type=int,
@@ -37,6 +49,7 @@ async def main():
     args = parser.parse_args()
 
     config = ExperimentConfig(
+        target_id=args.target,
         target_mode=args.mode,
         provider="ollama",
         model="qwen2.5-coder:7b",
@@ -51,12 +64,13 @@ async def main():
 
     summary = batch["summary"]
 
-    print("\n" + "=" * 60)
-    print("VULNFORGE - REPEATED TRIAL SUMMARY")
+    print("\nVULNFORGE - REPEATED TRIAL SUMMARY")
     print("=" * 60)
+
     print("Batch ID:", batch["batch_id"])
+    print("Target:", config.target_id)
     print("Model:", config.model)
-    print("Target mode:", config.target_mode)
+    print("Mode:", config.target_mode)
     print("Total trials:", summary["total_trials"])
     print("Completed:", summary["completed_trials"])
     print("Failed:", summary["failed_trials"])
@@ -67,14 +81,17 @@ async def main():
     print("Verified claims:", summary["verified_claims"])
     print("Unsupported claims:", summary["unsupported_claims"])
     print("Unadjudicated claims:", summary["unadjudicated_claims"])
+
     print(
-        "Discovery rate (valid evaluations):",
+        "Discovery rate:",
         summary["discovery_rate_among_valid_evaluations"],
     )
+
     print(
-        "Mean completed duration (seconds):",
+        "Mean completed duration:",
         summary["mean_completed_duration_seconds"],
     )
+
     print("\nBatch saved:", batch["batch_path"])
 
     if (

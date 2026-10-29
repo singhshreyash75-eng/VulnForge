@@ -5,7 +5,18 @@ import hashlib
 import json
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    model_validator,
+)
+
+
+TargetID = Literal[
+    "document-api-v1",
+    "input-api-v1",
+]
 
 
 class ExperimentConfig(BaseModel):
@@ -18,24 +29,52 @@ class ExperimentConfig(BaseModel):
 
     protocol_version: Literal["6.1"] = "6.1"
 
-    target_id: Literal["document-api-v1"] = "document-api-v1"
-    target_mode: Literal["vulnerable", "patched"]
+    target_id: TargetID = "document-api-v1"
+
+    target_mode: Literal[
+        "vulnerable",
+        "patched",
+    ]
 
     provider: Literal[
-        "ollama", "openai", "anthropic", "gemini"
+        "ollama",
+        "openai",
+        "anthropic",
+        "gemini",
     ] = "ollama"
 
     model: str = Field(min_length=1)
 
     trial_number: int = Field(default=1, ge=1)
-    max_rounds: int = Field(default=18, ge=1, le=100)
-    max_tool_calls: int = Field(default=20, ge=1, le=200)
-    max_http_requests: int = Field(default=20, ge=1, le=200)
+
+    max_rounds: int = Field(
+        default=18,
+        ge=1,
+        le=100,
+    )
+
+    max_tool_calls: int = Field(
+        default=20,
+        ge=1,
+        le=200,
+    )
+
+    max_http_requests: int = Field(
+        default=20,
+        ge=1,
+        le=200,
+    )
 
     temperature: float | None = Field(
-        default=None, ge=0, le=2
+        default=None,
+        ge=0,
+        le=2,
     )
-    seed: int | None = Field(default=None, ge=0)
+
+    seed: int | None = Field(
+        default=None,
+        ge=0,
+    )
 
     prompt_version: str = Field(
         default="structured_findings_v1",
@@ -49,14 +88,17 @@ class ExperimentConfig(BaseModel):
                 "HTTP request budget must be at least "
                 "the tool-call budget for this protocol"
             )
+
         return self
 
     def canonical_payload(self) -> dict:
-        """Return the exact validated configuration."""
+        """Return validated configuration metadata."""
+
         return self.model_dump(mode="json")
 
     def fingerprint(self) -> str:
-        """Stable SHA-256 hash of the configuration."""
+        """Stable SHA-256 configuration fingerprint."""
+
         encoded = json.dumps(
             self.canonical_payload(),
             sort_keys=True,

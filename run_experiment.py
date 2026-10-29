@@ -1,5 +1,5 @@
 
-"""Run one registry-backed VulnForge benchmark experiment."""
+"""Run one automated VulnForge experiment."""
 
 import argparse
 import asyncio
@@ -10,19 +10,22 @@ from vulnforge.experiments.executor import execute_experiment
 
 async def main():
     parser = argparse.ArgumentParser(
-        description="VulnForge automated experiment runner"
+        description="VulnForge multi-target experiment runner"
     )
 
     parser.add_argument(
         "--target",
+        choices=[
+            "document-api-v1",
+            "input-api-v1",
+        ],
         default="document-api-v1",
-        choices=["document-api-v1"],
     )
 
     parser.add_argument(
         "--mode",
-        required=True,
         choices=["vulnerable", "patched"],
+        required=True,
     )
 
     parser.add_argument(
@@ -58,18 +61,18 @@ async def main():
         cleanup=not args.keep_target,
     )
 
-    print("\nVULNFORGE - REGISTRY-BACKED EXPERIMENT")
+    print("\nVULNFORGE - MULTI-TARGET EXPERIMENT")
     print("=" * 60)
 
     print("Run ID:", result["run_id"])
     print("Target:", result["target_id"])
-    print("Target mode:", args.mode)
-    print("Target mode verified:", result["target_mode_verified"])
+    print("Mode:", args.mode)
+    print("Target verified:", result["target_mode_verified"])
     print("Status:", result["status"])
     print("Duration:", result["duration_seconds"], "seconds")
     print("Corpus fingerprint:", result["corpus_fingerprint"])
-    print("Result file:", result["result_path"])
-    print("Evidence artifact:", result["artifact_path"])
+    print("Result:", result["result_path"])
+    print("Artifact:", result["artifact_path"])
     print("Artifact SHA-256:", result["artifact_sha256"])
 
     if result["error"]:
@@ -82,7 +85,7 @@ async def main():
 
     if summary:
         evaluation = summary.get("evaluation") or {}
-        dedup = summary.get("deduplication") or {}
+        deduplication = summary.get("deduplication") or {}
 
         print("\nBENCHMARK OUTCOME")
         print("-" * 60)
@@ -96,16 +99,24 @@ async def main():
             evaluation.get("seeded_vulnerability_missed"),
         )
         print(
-            "Verified findings:",
+            "Verified claims:",
             evaluation.get("verified_findings"),
         )
         print(
-            "Unadjudicated findings:",
+            "Unsupported claims:",
+            evaluation.get("unsupported_findings"),
+        )
+        print(
+            "Rejected claims:",
+            evaluation.get("rejected_findings"),
+        )
+        print(
+            "Unadjudicated claims:",
             evaluation.get("unadjudicated_findings"),
         )
         print(
             "Unique verified weaknesses:",
-            dedup.get("unique_verified_vulnerabilities"),
+            deduplication.get("unique_verified_vulnerabilities"),
         )
 
     if result["status"] != "completed":

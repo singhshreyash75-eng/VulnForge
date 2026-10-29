@@ -1,9 +1,7 @@
 
 """Trusted target adapters for the VulnForge benchmark corpus.
 
-A corpus manifest describes a target, but does not grant
-permission to execute arbitrary Docker configurations.
-
+Corpus metadata cannot authorize arbitrary Docker execution.
 Only explicitly approved local targets can be adapted.
 """
 
@@ -34,13 +32,20 @@ class ApprovedTarget:
     allowed_modes: tuple[str, ...]
 
 
-# This allowlist is trusted application code.
-# Corpus JSON files cannot modify these permissions.
 APPROVED_TARGETS = {
     "document-api-v1": ApprovedTarget(
         compose_file="lab/docker-compose.yml",
         host="127.0.0.1",
         port=18080,
+        health_path="/health",
+        allowed_modes=("vulnerable", "patched"),
+    ),
+    "input-api-v1": ApprovedTarget(
+        compose_file=(
+            "lab/targets/input_api/docker-compose.yml"
+        ),
+        host="127.0.0.1",
+        port=18081,
         health_path="/health",
         allowed_modes=("vulnerable", "patched"),
     ),
@@ -63,13 +68,15 @@ def create_target_adapter(
     registry: CorpusRegistry | None = None,
     project_root: Path | None = None,
 ) -> TargetAdapter:
-    """Resolve one registered target using trusted execution settings.
+    """Resolve a registered target using trusted settings.
 
     This function performs static validation only.
-    It does not start Docker or verify target behavior.
+    It does not launch Docker or validate runtime behavior.
     """
 
-    registry = registry or CorpusRegistry()
+    if registry is None:
+        registry = CorpusRegistry()
+
     root = (
         Path(project_root).resolve()
         if project_root is not None
@@ -123,7 +130,6 @@ def create_target_adapter(
         root / approved.compose_file
     ).resolve()
 
-    # Resolve symlinks and reject paths escaping the project.
     if not compose_path.is_relative_to(root):
         raise TargetAdapterError(
             "Compose file resolves outside project root"
@@ -148,5 +154,7 @@ def create_target_adapter(
         target_id=manifest.target_id,
         mode=mode,
         docker_target=docker_target,
-        corpus_fingerprint=registry.fingerprint(target_id),
+        corpus_fingerprint=registry.fingerprint(
+            target_id
+        ),
     )

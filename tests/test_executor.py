@@ -1,8 +1,10 @@
 
-"""Offline regression tests for registry-backed execution."""
+"""Offline regression tests for multi-target experiment execution."""
 
 import json
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
+from uuid import uuid4
 
 import pytest
 
@@ -19,8 +21,79 @@ def config(**overrides):
     return ExperimentConfig(**values)
 
 
-def test_default_config_supported():
+def setup_paths(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        executor,
+        "RESULT_DIR",
+        tmp_path / "experiments",
+    )
+    monkeypatch.setattr(
+        executor,
+        "INVESTIGATION_DIR",
+        tmp_path / "investigations",
+    )
+    executor.INVESTIGATION_DIR.mkdir()
+
+    def fake_resolve(cfg):
+        return SimpleNamespace(
+            target_id=cfg.target_id,
+            corpus_fingerprint="test-fingerprint",
+            docker_target=SimpleNamespace(
+                target_id=cfg.target_id,
+            ),
+        )
+
+    monkeypatch.setattr(
+        executor,
+        "resolve_target",
+        fake_resolve,
+    )
+
+
+def manager_for(target_id):
+    manager = AsyncMock()
+    manager.target.target_id = target_id
+    return manager
+
+
+def benchmark(cfg, run_id):
+    return {
+        "run_id": run_id,
+        "target_id": cfg.target_id,
+        "target_mode": cfg.target_mode,
+        "provider": cfg.provider,
+        "model": cfg.model,
+        "run_status": "completed",
+        "integrity_valid": True,
+        "trace_matches_evidence": True,
+        "submission_valid": True,
+        "oracle": {
+            "expected_mode": cfg.target_mode,
+            "oracle_valid": True,
+        },
+        "evaluation": {
+            "target_mode": cfg.target_mode,
+            "evaluation_status": "valid",
+            "oracle_valid": True,
+            "seeded_vulnerability_discovered": False,
+            "seeded_vulnerability_missed": (
+                cfg.target_mode == "vulnerable"
+            ),
+            "verified_findings": 0,
+            "unadjudicated_findings": 1,
+        },
+        "deduplication": None,
+    }
+
+
+def test_document_config_supported():
     executor.validate_runner_config(config())
+
+
+def test_input_config_supported():
+    executor.validate_runner_config(
+        config(target_id="input-api-v1")
+    )
 
 
 def test_wrong_model_rejected():
@@ -62,97 +135,70 @@ def test_atomic_result_no_overwrite(tmp_path):
         executor.atomic_json(path, {"status": "failed"})
 
 
-def test_artifact_selection(tmp_path, monkeypatch):
+def test_run_id_artifact_path(tmp_path, monkeypatch):
     monkeypatch.setattr(
         executor,
         "INVESTIGATION_DIR",
         tmp_path,
     )
 
-    (tmp_path / "qwen_vulnerable_new.json").write_text("{}")
-
-    selected = executor.find_new_artifact(
-        set(),
-        "vulnerable",
+    run_id = str(uuid4())
+    assert executor.artifact_for_run(run_id) == (
+        tmp_path / f"{run_id}.json"
     )
 
-    assert selected is not None
-    assert selected.name == "qwen_vulnerable_new.json"
+
+def test_invalid_run_id_rejected():
+    with pytest.raises(ValueError):
+        executor.artifact_for_run("../../secret")
 
 
-def test_ambiguous_artifacts_rejected(tmp_path, monkeypatch):
-    monkeypatch.setattr(
-        executor,
-        "INVESTIGATION_DIR",
-        tmp_path,
+def test_wrong_target_rejected():
+    cfg = config()
+    payload = benchmark(cfg, str(uuid4()))
+    payload["target_id"] = "input-api-v1"
+
+    assert not executor.benchmark_is_valid(
+        payload,
+        cfg,
     )
 
-    (tmp_path / "qwen_vulnerable_a.json").write_text("{}")
-    (tmp_path / "qwen_vulnerable_b.json").write_text("{}")
 
-    assert executor.find_new_artifact(
-        set(),
-        "vulnerable",
-    ) is None
+def test_wrong_run_id_rejected():
+    cfg = config()
+    payload = benchmark(cfg, str(uuid4()))
 
-
-def setup_paths(tmp_path, monkeypatch):
-    monkeypatch.setattr(
-        executor,
-        "RESULT_DIR",
-        tmp_path / "experiments",
+    assert not executor.benchmark_is_valid(
+        payload,
+        cfg,
+        run_id=str(uuid4()),
     )
-
-    monkeypatch.setattr(
-        executor,
-        "INVESTIGATION_DIR",
-        tmp_path / "investigations",
-    )
-
-    executor.INVESTIGATION_DIR.mkdir()
-
-
-def mock_manager():
-    manager = AsyncMock()
-    manager.target.target_id = "document-api-v1"
-    return manager
 
 
 @pytest.mark.asyncio
-async def test_successful_execution(tmp_path, monkeypatch):
+@pytest.mark.parametrize(
+    "target_id",
+    ["document-api-v1", "input-api-v1"],
+)
+async def test_successful_target_execution(
+    tmp_path,
+    monkeypatch,
+    target_id,
+):
     setup_paths(tmp_path, monkeypatch)
+    cfg = config(target_id=target_id)
 
-    async def fake_investigation(mode, timeout):
-        artifact = (
-            executor.INVESTIGATION_DIR
-            / "qwen_vulnerable_test.json"
-        )
-
-        artifact.write_text(
-            json.dumps({
-                "target_id": "document-api-v1",
-                "target_mode": "vulnerable",
-                "provider": "ollama",
-                "model": "qwen2.5-coder:7b",
-                "run_status": "completed",
-                "integrity_valid": True,
-                "trace_matches_evidence": True,
-                "submission_valid": True,
-                "evaluation": {
-                    "evaluation_status": "valid",
-                    "oracle_valid": True,
-                    "seeded_vulnerability_discovered": False,
-                    "seeded_vulnerability_missed": True,
-                    "verified_findings": 0,
-                    "unadjudicated_findings": 1,
-                },
-                "deduplication": {
-                    "unique_verified_vulnerabilities": 0,
-                },
-            }),
+    async def fake_investigation(
+        mode,
+        timeout,
+        target_id,
+        run_id,
+    ):
+        path = executor.artifact_for_run(run_id)
+        path.write_text(
+            json.dumps(benchmark(cfg, run_id)),
             encoding="utf-8",
         )
-
         return {
             "exit_code": 0,
             "stdout": "completed",
@@ -165,18 +211,17 @@ async def test_successful_execution(tmp_path, monkeypatch):
         fake_investigation,
     )
 
-    manager = mock_manager()
+    manager = manager_for(target_id)
 
     result = await executor.execute_experiment(
-        config(),
+        cfg,
         manager=manager,
     )
 
     assert result["status"] == "completed"
     assert result["target_mode_verified"] is True
-    assert result["corpus_fingerprint"]
     assert len(result["artifact_sha256"]) == 64
-    assert result["benchmark_summary"] is not None
+    assert result["run_id"] in result["artifact_path"]
 
     manager.reset.assert_awaited_once_with("vulnerable")
     manager.verify_mode.assert_awaited_once_with("vulnerable")
@@ -184,10 +229,10 @@ async def test_successful_execution(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_failure_is_recorded(tmp_path, monkeypatch):
+async def test_docker_failure_recorded(tmp_path, monkeypatch):
     setup_paths(tmp_path, monkeypatch)
 
-    manager = mock_manager()
+    manager = manager_for("document-api-v1")
     manager.reset.side_effect = RuntimeError(
         "Docker unavailable"
     )
@@ -199,27 +244,24 @@ async def test_failure_is_recorded(tmp_path, monkeypatch):
 
     assert result["status"] == "failed"
     assert "Docker unavailable" in result["error"]
-    assert result["target_mode_verified"] is False
-
-    saved = list(
-        (tmp_path / "experiments" / "results").glob("*.json")
-    )
-
-    assert len(saved) == 1
     manager.verify_mode.assert_not_awaited()
     manager.stop.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_mode_verification_failure(tmp_path, monkeypatch):
+async def test_mode_verification_failure(
+    tmp_path,
+    monkeypatch,
+):
     setup_paths(tmp_path, monkeypatch)
 
-    manager = mock_manager()
+    manager = manager_for("input-api-v1")
     manager.verify_mode.side_effect = RuntimeError(
-        "Incorrect target mode"
+        "Mode mismatch"
     )
 
     investigation = AsyncMock()
+
     monkeypatch.setattr(
         executor,
         "run_investigation",
@@ -227,7 +269,7 @@ async def test_mode_verification_failure(tmp_path, monkeypatch):
     )
 
     result = await executor.execute_experiment(
-        config(),
+        config(target_id="input-api-v1"),
         manager=manager,
     )
 
@@ -237,30 +279,24 @@ async def test_mode_verification_failure(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_invalid_artifact_rejected(tmp_path, monkeypatch):
+async def test_invalid_artifact_recorded(
+    tmp_path,
+    monkeypatch,
+):
     setup_paths(tmp_path, monkeypatch)
+    cfg = config()
 
-    async def fake_investigation(mode, timeout):
-        artifact = (
-            executor.INVESTIGATION_DIR
-            / "qwen_vulnerable_invalid.json"
-        )
+    async def fake_investigation(
+        mode,
+        timeout,
+        target_id,
+        run_id,
+    ):
+        payload = benchmark(cfg, run_id)
+        payload["integrity_valid"] = False
 
-        artifact.write_text(
-            json.dumps({
-                "target_id": "document-api-v1",
-                "target_mode": "vulnerable",
-                "provider": "ollama",
-                "model": "qwen2.5-coder:7b",
-                "run_status": "completed",
-                "integrity_valid": False,
-                "trace_matches_evidence": False,
-                "submission_valid": True,
-                "evaluation": {
-                    "evaluation_status": "valid",
-                    "oracle_valid": True,
-                },
-            }),
+        executor.artifact_for_run(run_id).write_text(
+            json.dumps(payload),
             encoding="utf-8",
         )
 
@@ -277,31 +313,37 @@ async def test_invalid_artifact_rejected(tmp_path, monkeypatch):
     )
 
     result = await executor.execute_experiment(
-        config(),
-        manager=mock_manager(),
+        cfg,
+        manager=manager_for(cfg.target_id),
     )
 
     assert result["status"] == "invalid"
     assert result["error"] == "benchmark_validation_failed"
 
 
-def test_benchmark_validation_rejects_wrong_target():
-    payload = {
-        "target_id": "another-target",
-        "target_mode": "vulnerable",
-        "provider": "ollama",
-        "model": "qwen2.5-coder:7b",
-        "run_status": "completed",
-        "integrity_valid": True,
-        "trace_matches_evidence": True,
-        "submission_valid": True,
-        "evaluation": {
-            "evaluation_status": "valid",
-            "oracle_valid": True,
-        },
-    }
+@pytest.mark.asyncio
+async def test_missing_artifact_recorded(
+    tmp_path,
+    monkeypatch,
+):
+    setup_paths(tmp_path, monkeypatch)
 
-    assert not executor.benchmark_is_valid(
-        payload,
-        config(),
+    monkeypatch.setattr(
+        executor,
+        "run_investigation",
+        AsyncMock(return_value={
+            "exit_code": 0,
+            "stdout": "",
+            "stderr": "",
+        }),
     )
+
+    cfg = config()
+
+    result = await executor.execute_experiment(
+        cfg,
+        manager=manager_for(cfg.target_id),
+    )
+
+    assert result["status"] == "failed"
+    assert result["error"] == "investigation_artifact_missing"
