@@ -1,11 +1,13 @@
 
-"""Milestone 6.2B: controlled local experiment execution."""
+"""VulnForge 6.5B-2: registry-backed experiment execution."""
 
 import asyncio
+import hashlib
 import json
 import os
 import sys
 import time
+
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -19,13 +21,12 @@ ROOT = Path(__file__).resolve().parents[2]
 RESULT_DIR = ROOT / "artifacts" / "experiments"
 INVESTIGATION_DIR = ROOT / "artifacts" / "investigations"
 
-# Existing investigate_lab.py uses these fixed settings.
 SUPPORTED_MODEL = "qwen2.5-coder:7b"
 SUPPORTED_PROMPT = "structured_findings_v1"
 
 
 def validate_runner_config(config: ExperimentConfig) -> None:
-    """Reject settings the current runner cannot honor."""
+    """Reject configurations the existing agent cannot honor."""
 
     if (
         config.target_id != "document-api-v1"
@@ -39,14 +40,26 @@ def validate_runner_config(config: ExperimentConfig) -> None:
         or config.seed is not None
     ):
         raise ValueError(
-            "Current runner supports only the existing "
-            "Qwen document-lab protocol with default "
-            "budgets and unspecified sampling settings."
+            "The current investigation runner supports only "
+            "the approved Qwen document API protocol."
         )
 
 
+def resolve_target(config: ExperimentConfig):
+    """Resolve an approved registry-backed Docker target."""
+
+    from vulnforge.corpus.adapters import (
+        create_target_adapter,
+    )
+
+    return create_target_adapter(
+        target_id=config.target_id,
+        mode=config.target_mode,
+    )
+
+
 def atomic_json(path: Path, payload: dict) -> None:
-    """Create a JSON result without overwriting existing data."""
+    """Create a JSON result without overwriting an existing run."""
 
     path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -76,7 +89,7 @@ async def run_investigation(
     mode: str,
     timeout: float,
 ) -> dict:
-    """Execute the existing CLI with a bounded wall-clock time."""
+    """Run the existing research CLI with a time limit."""
 
     process = await asyncio.create_subprocess_exec(
         sys.executable,
@@ -94,12 +107,13 @@ async def run_investigation(
             timeout=timeout,
         )
 
-    except asyncio.TimeoutError:
+    except asyncio.TimeoutError as exc:
         process.kill()
         await process.communicate()
+
         raise TimeoutError(
             "Investigation exceeded its wall-clock budget"
-        )
+        ) from exc
 
     return {
         "exit_code": process.returncode,
@@ -112,7 +126,7 @@ def find_new_artifact(
     before: set[str],
     mode: str,
 ) -> Path | None:
-    """Locate a newly created investigation artifact."""
+    """Find exactly one newly created investigation artifact."""
 
     if not INVESTIGATION_DIR.exists():
         return None
@@ -123,6 +137,7 @@ def find_new_artifact(
             f"qwen_{mode}_*.json"
         )
         if path.name not in before
+        and path.is_file()
     ]
 
     if len(candidates) != 1:
@@ -131,20 +146,59 @@ def find_new_artifact(
     return candidates[0]
 
 
+def artifact_sha256(path: Path) -> str:
+    """Hash saved artifact bytes for result linkage."""
+
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def benchmark_is_valid(
+    benchmark: dict,
+    config: ExperimentConfig,
+) -> bool:
+    """Validate essential benchmark result fields."""
+
+    evaluation = benchmark.get("evaluation")
+
+    return (
+        benchmark.get("target_mode") == config.target_mode
+        and benchmark.get("target_id") == config.target_id
+        and benchmark.get("provider") == config.provider
+        and benchmark.get("model") == config.model
+        and benchmark.get("run_status") == "completed"
+        and benchmark.get("integrity_valid") is True
+        and benchmark.get("trace_matches_evidence") is True
+        and benchmark.get("submission_valid") is True
+        and isinstance(evaluation, dict)
+        and evaluation.get("evaluation_status") == "valid"
+        and evaluation.get("oracle_valid") is True
+    )
+
+
 async def execute_experiment(
     config: ExperimentConfig,
     manager: DockerManager | None = None,
     timeout: float = 900.0,
     cleanup: bool = True,
 ) -> dict:
-    """Run one experiment and preserve success or failure."""
+    """Execute one approved experiment and record its outcome."""
 
     validate_runner_config(config)
 
     if timeout <= 0:
         raise ValueError("Timeout must be positive")
 
-    manager = manager or DockerManager()
+    adapter = resolve_target(config)
+
+    if manager is None:
+        manager = DockerManager(
+            target=adapter.docker_target
+        )
+    elif manager.target.target_id != adapter.target_id:
+        raise ValueError(
+            "Provided Docker manager targets another application"
+        )
+
     manifest = create_manifest(config)
 
     manifest_path = save_manifest(
@@ -163,8 +217,10 @@ async def execute_experiment(
     error = None
     execution = None
     artifact_path = None
+    artifact_digest = None
     benchmark = None
     cleanup_error = None
+    target_verified = False
 
     before = set()
 
@@ -179,6 +235,13 @@ async def execute_experiment(
     try:
         await manager.reset(config.target_mode)
 
+        # Verify the actual authorization behavior, not just
+        # the application's health endpoint.
+        await manager.verify_mode(config.target_mode)
+        target_verified = True
+
+        # Keep evaluator-only mode verification separate
+        # from the model's research observations.
         execution = await run_investigation(
             config.target_mode,
             timeout,
@@ -200,21 +263,11 @@ async def execute_experiment(
                 artifact_path.read_text(encoding="utf-8")
             )
 
-            # Never mark an experiment successful based
-            # solely on a zero process exit code.
-            valid = (
-                benchmark.get("target_mode")
-                == config.target_mode
-                and benchmark.get("model") == config.model
-                and benchmark.get("integrity_valid") is True
-                and benchmark.get("submission_valid") is True
-                and isinstance(benchmark.get("evaluation"), dict)
-                and benchmark["evaluation"].get(
-                    "evaluation_status"
-                ) == "valid"
+            artifact_digest = artifact_sha256(
+                artifact_path
             )
 
-            if valid:
+            if benchmark_is_valid(benchmark, config):
                 status = "completed"
             else:
                 status = "invalid"
@@ -233,11 +286,14 @@ async def execute_experiment(
                 )
 
     result = {
-        "schema_version": "6.2B",
+        "schema_version": "6.5B-2",
         "run_id": manifest.run_id,
         "manifest_path": str(manifest_path),
         "config_fingerprint": config.fingerprint(),
+        "corpus_fingerprint": adapter.corpus_fingerprint,
         "config": config.model_dump(mode="json"),
+        "target_id": adapter.target_id,
+        "target_mode_verified": target_verified,
         "status": status,
         "error": error,
         "started_at": started_at.isoformat(),
@@ -251,6 +307,7 @@ async def execute_experiment(
         "artifact_path": (
             str(artifact_path) if artifact_path else None
         ),
+        "artifact_sha256": artifact_digest,
         "benchmark_summary": (
             {
                 "run_status": benchmark.get("run_status"),

@@ -1,5 +1,5 @@
 
-"""Run one automated VulnForge experiment."""
+"""Run one registry-backed VulnForge benchmark experiment."""
 
 import argparse
 import asyncio
@@ -11,6 +11,12 @@ from vulnforge.experiments.executor import execute_experiment
 async def main():
     parser = argparse.ArgumentParser(
         description="VulnForge automated experiment runner"
+    )
+
+    parser.add_argument(
+        "--target",
+        default="document-api-v1",
+        choices=["document-api-v1"],
     )
 
     parser.add_argument(
@@ -39,6 +45,7 @@ async def main():
     args = parser.parse_args()
 
     config = ExperimentConfig(
+        target_id=args.target,
         target_mode=args.mode,
         provider="ollama",
         model="qwen2.5-coder:7b",
@@ -51,14 +58,19 @@ async def main():
         cleanup=not args.keep_target,
     )
 
-    print("\nVULNFORGE AUTOMATED EXPERIMENT")
-    print("=" * 55)
+    print("\nVULNFORGE - REGISTRY-BACKED EXPERIMENT")
+    print("=" * 60)
+
     print("Run ID:", result["run_id"])
+    print("Target:", result["target_id"])
     print("Target mode:", args.mode)
+    print("Target mode verified:", result["target_mode_verified"])
     print("Status:", result["status"])
     print("Duration:", result["duration_seconds"], "seconds")
+    print("Corpus fingerprint:", result["corpus_fingerprint"])
     print("Result file:", result["result_path"])
     print("Evidence artifact:", result["artifact_path"])
+    print("Artifact SHA-256:", result["artifact_sha256"])
 
     if result["error"]:
         print("Error:", result["error"])
@@ -73,6 +85,8 @@ async def main():
         dedup = summary.get("deduplication") or {}
 
         print("\nBENCHMARK OUTCOME")
+        print("-" * 60)
+
         print(
             "Seeded weakness discovered:",
             evaluation.get("seeded_vulnerability_discovered"),

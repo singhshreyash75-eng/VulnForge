@@ -1,9 +1,5 @@
 
-"""Controlled Docker lifecycle management for local VulnForge targets.
-
-This module manages only the explicitly registered document API lab.
-It does not execute arbitrary Docker Compose files supplied by models.
-"""
+"""Controlled Docker lifecycle for approved VulnForge lab targets."""
 
 import asyncio
 import os
@@ -16,7 +12,7 @@ import httpx
 
 
 class DockerLifecycleError(RuntimeError):
-    """Raised when a target cannot be safely prepared."""
+    """Raised when a registered target cannot be prepared."""
 
 
 @dataclass(frozen=True)
@@ -28,8 +24,6 @@ class DockerTarget:
 
 
 def default_target() -> DockerTarget:
-    """Return the registered synthetic document API target."""
-
     root = Path(__file__).resolve().parents[2]
 
     return DockerTarget(
@@ -40,7 +34,7 @@ def default_target() -> DockerTarget:
 
 
 class DockerManager:
-    """Start, stop and verify one registered local target."""
+    """Manage one explicitly registered local Docker target."""
 
     def __init__(
         self,
@@ -64,7 +58,9 @@ class DockerManager:
 
     def _validate(self, mode: str) -> None:
         if mode not in self.target.allowed_modes:
-            raise ValueError(f"Unsupported target mode: {mode}")
+            raise ValueError(
+                f"Unsupported target mode: {mode}"
+            )
 
         if not self.target.compose_file.is_file():
             raise DockerLifecycleError(
@@ -76,7 +72,7 @@ class DockerManager:
         *arguments: str,
         mode: str | None = None,
     ) -> str:
-        """Execute a fixed Docker Compose command."""
+        """Execute a fixed Docker Compose operation."""
 
         environment = os.environ.copy()
 
@@ -104,9 +100,11 @@ class DockerManager:
                     process.communicate(),
                     timeout=self.command_timeout,
                 )
+
             except asyncio.TimeoutError as exc:
                 process.kill()
                 await process.communicate()
+
                 raise DockerLifecycleError(
                     "Docker Compose command timed out"
                 ) from exc
@@ -127,9 +125,11 @@ class DockerManager:
         return output
 
     async def wait_ready(self) -> None:
-        """Poll the local health endpoint until it responds."""
+        """Wait for a valid application health response."""
 
-        deadline = time.monotonic() + self.readiness_timeout
+        deadline = (
+            time.monotonic() + self.readiness_timeout
+        )
 
         async with httpx.AsyncClient(
             timeout=3.0,
@@ -152,10 +152,7 @@ class DockerManager:
                         ):
                             return
 
-                except (
-                    httpx.HTTPError,
-                    ValueError,
-                ):
+                except (httpx.HTTPError, ValueError):
                     pass
 
                 await asyncio.sleep(self.poll_interval)
@@ -164,8 +161,72 @@ class DockerManager:
             "Target did not become healthy before timeout"
         )
 
+    async def verify_mode(self, mode: str) -> None:
+        """Verify document API authorization behavior.
+
+        This verifier is specific to document-api-v1.
+        Additional targets require separate verifiers.
+        """
+
+        self._validate(mode)
+
+        if self.target.target_id != "document-api-v1":
+            raise DockerLifecycleError(
+                "No mode verifier registered for target"
+            )
+
+        base_url = self.target.health_url.removesuffix(
+            "/health"
+        )
+
+        async with httpx.AsyncClient(
+            timeout=5.0,
+            trust_env=False,
+            follow_redirects=False,
+        ) as client:
+            try:
+                response = await client.get(
+                    base_url + "/api/documents/102",
+                    headers={
+                        "X-API-Key": "lab-alice-key",
+                    },
+                )
+            except httpx.HTTPError as exc:
+                raise DockerLifecycleError(
+                    "Target mode verification request failed"
+                ) from exc
+
+        expected_status = (
+            200 if mode == "vulnerable" else 403
+        )
+
+        if response.status_code != expected_status:
+            raise DockerLifecycleError(
+                "Target mode verification failed: "
+                f"expected HTTP {expected_status}, "
+                f"received HTTP {response.status_code}"
+            )
+
+        if mode == "vulnerable":
+            try:
+                body = response.json()
+            except ValueError as exc:
+                raise DockerLifecycleError(
+                    "Vulnerable target returned invalid JSON"
+                ) from exc
+
+            if (
+                not isinstance(body, dict)
+                or body.get("owner") != "bob"
+                or body.get("id") != 102
+            ):
+                raise DockerLifecycleError(
+                    "Vulnerable target did not expose "
+                    "the expected cross-owner document"
+                )
+
     async def start(self, mode: str) -> None:
-        """Start the target with the selected lab mode."""
+        """Start and verify the requested target mode."""
 
         self._validate(mode)
 
@@ -180,11 +241,10 @@ class DockerManager:
 
     async def stop(self) -> None:
         """Stop the registered Docker Compose project."""
-
         await self._compose("down")
 
     async def reset(self, mode: str) -> None:
-        """Recreate the target in a known requested mode."""
+        """Reset the target before an independent trial."""
 
         self._validate(mode)
 
