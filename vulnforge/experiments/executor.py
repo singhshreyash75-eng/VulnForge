@@ -1,5 +1,9 @@
 
-"""VulnForge 6.5C: registry-backed, run-linked experiment executor."""
+"""VulnForge registry-backed, run-linked experiment executor.
+
+Milestone 6.5D-2D:
+Protocol validation and reproducibility linkage.
+"""
 
 import asyncio
 import hashlib
@@ -7,13 +11,15 @@ import json
 import os
 import sys
 import time
+
 from datetime import datetime, timezone
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from .config import ExperimentConfig
 from .docker_manager import DockerManager
 from .manifest import create_manifest, save_manifest
+from .protocol_binding import verify_run_protocol
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -30,7 +36,7 @@ SUPPORTED_TARGETS = {
 
 
 def validate_runner_config(config: ExperimentConfig) -> None:
-    """Reject configuration options the runner cannot honor."""
+    """Reject configurations the runner cannot honor."""
 
     if (
         config.target_id not in SUPPORTED_TARGETS
@@ -61,16 +67,22 @@ def resolve_target(config: ExperimentConfig):
 
 
 def atomic_json(path: Path, payload: dict) -> None:
-    """Create a result file without overwriting earlier data."""
+    """Create JSON without overwriting existing results."""
 
-    path.parent.mkdir(parents=True, exist_ok=True)
+    path.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
 
     temporary = path.with_name(
         f".{path.name}.{uuid4().hex}.tmp"
     )
 
     try:
-        with temporary.open("x", encoding="utf-8") as handle:
+        with temporary.open(
+            "x",
+            encoding="utf-8",
+        ) as handle:
             json.dump(
                 payload,
                 handle,
@@ -78,6 +90,7 @@ def atomic_json(path: Path, payload: dict) -> None:
                 sort_keys=True,
                 default=str,
             )
+
             handle.flush()
             os.fsync(handle.fileno())
 
@@ -85,6 +98,20 @@ def atomic_json(path: Path, payload: dict) -> None:
 
     finally:
         temporary.unlink(missing_ok=True)
+
+
+def validate_run_id(run_id: str) -> str:
+    """Require a canonical UUID."""
+
+    try:
+        parsed = UUID(run_id)
+    except (ValueError, TypeError, AttributeError) as exc:
+        raise ValueError("Invalid run ID") from exc
+
+    if str(parsed) != run_id:
+        raise ValueError("Invalid run ID")
+
+    return run_id
 
 
 async def run_investigation(
@@ -105,11 +132,7 @@ async def run_investigation(
     ]
 
     if run_id is not None:
-        from uuid import UUID
-
-        if str(UUID(run_id)) != run_id:
-            raise ValueError("Noncanonical run ID")
-
+        validate_run_id(run_id)
         command.extend(["--run-id", run_id])
 
     process = await asyncio.create_subprocess_exec(
@@ -143,10 +166,7 @@ async def run_investigation(
 def artifact_for_run(run_id: str) -> Path:
     """Return the exact artifact path for a registered run."""
 
-    from uuid import UUID
-
-    if str(UUID(run_id)) != run_id:
-        raise ValueError("Invalid run ID")
+    validate_run_id(run_id)
 
     return INVESTIGATION_DIR / f"{run_id}.json"
 
@@ -155,10 +175,7 @@ def find_new_artifact(
     before: set[str],
     mode: str,
 ) -> Path | None:
-    """Legacy helper retained for backward compatibility.
-
-    New automated executions must use artifact_for_run().
-    """
+    """Legacy helper retained for compatibility."""
 
     if not INVESTIGATION_DIR.exists():
         return None
@@ -175,7 +192,11 @@ def find_new_artifact(
 
 
 def artifact_sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    """Calculate artifact SHA-256."""
+
+    return hashlib.sha256(
+        path.read_bytes()
+    ).hexdigest()
 
 
 def benchmark_is_valid(
@@ -183,7 +204,7 @@ def benchmark_is_valid(
     config: ExperimentConfig,
     run_id: str | None = None,
 ) -> bool:
-    """Check essential benchmark integrity and identity fields."""
+    """Validate benchmark identity, integrity and protocol."""
 
     if not isinstance(benchmark, dict):
         return False
@@ -197,8 +218,48 @@ def benchmark_is_valid(
     if not isinstance(oracle, dict):
         return False
 
-    if run_id is not None and benchmark.get("run_id") != run_id:
+    if (
+        run_id is not None
+        and benchmark.get("run_id") != run_id
+    ):
         return False
+
+    if run_id is not None:
+        record = benchmark.get("protocol_record")
+
+        if not isinstance(record, dict):
+            return False
+
+        from investigate_lab import research_prompt_for
+
+        try:
+            linkage = verify_run_protocol(
+                record,
+                target_id=config.target_id,
+                mode=config.target_mode,
+                prompt=research_prompt_for(
+                    config.target_id
+                ),
+                run_id=run_id,
+            )
+
+        except (ValueError, TypeError, KeyError):
+            return False
+
+        if not linkage.get("valid"):
+            return False
+
+        if (
+            benchmark.get("protocol_fingerprint")
+            != record.get("protocol_fingerprint")
+        ):
+            return False
+
+        if (
+            benchmark.get("research_prompt")
+            != research_prompt_for(config.target_id)
+        ):
+            return False
 
     return (
         benchmark.get("target_id") == config.target_id
@@ -273,7 +334,6 @@ async def execute_experiment(
 
         await manager.reset(config.target_mode)
 
-        # Evaluator-side target verification.
         await manager.verify_mode(config.target_mode)
         target_verified = True
 
@@ -292,7 +352,9 @@ async def execute_experiment(
 
         else:
             benchmark = json.loads(
-                artifact_path.read_text(encoding="utf-8")
+                artifact_path.read_text(
+                    encoding="utf-8"
+                )
             )
 
             artifact_digest = artifact_sha256(
@@ -321,13 +383,47 @@ async def execute_experiment(
                     f"{type(exc).__name__}: {exc}"
                 )
 
+    protocol_fingerprint = None
+    protocol_validation = None
+
+    if isinstance(benchmark, dict):
+        record = benchmark.get("protocol_record")
+
+        if isinstance(record, dict):
+            protocol_fingerprint = record.get(
+                "protocol_fingerprint"
+            )
+
+            from investigate_lab import research_prompt_for
+
+            try:
+                protocol_validation = verify_run_protocol(
+                    record,
+                    target_id=config.target_id,
+                    mode=config.target_mode,
+                    prompt=research_prompt_for(
+                        config.target_id
+                    ),
+                    run_id=manifest.run_id,
+                )
+
+            except (ValueError, TypeError, KeyError):
+                protocol_validation = {
+                    "valid": False,
+                    "errors": [
+                        "protocol_validation_exception"
+                    ],
+                }
+
     result = {
-        "schema_version": "6.5C-2C",
+        "schema_version": "6.5D-2D",
         "run_id": manifest.run_id,
         "manifest_path": str(manifest_path),
         "config": config.model_dump(mode="json"),
         "config_fingerprint": config.fingerprint(),
         "corpus_fingerprint": adapter.corpus_fingerprint,
+        "protocol_fingerprint": protocol_fingerprint,
+        "protocol_validation": protocol_validation,
         "target_id": adapter.target_id,
         "target_mode_verified": target_verified,
         "status": status,

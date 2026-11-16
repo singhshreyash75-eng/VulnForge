@@ -1,14 +1,15 @@
 
-"""VulnForge: target-aware, run-linked autonomous investigation.
+"""VulnForge: target-aware autonomous investigation.
 
-The model independently investigates an authorized local target.
-Ground truth is evaluated separately from the model transcript.
+Milestone 6.5D-2D:
+Protocol records, evidence integrity and model diagnostics.
 """
 
 import argparse
 import asyncio
 import json
 import re
+
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID
@@ -35,6 +36,9 @@ from vulnforge.evaluation.integrity import (
 )
 from vulnforge.evaluation.deduplication import (
     deduplicate_verified_findings,
+)
+from vulnforge.experiments.protocol_binding import (
+    create_run_protocol,
 )
 
 
@@ -114,11 +118,11 @@ def research_prompt_for(target_id: str) -> str:
 
 
 def validate_run_id(run_id: str) -> str:
-    """Require a canonical UUID to prevent unsafe filenames."""
+    """Require a canonical UUID for artifact filenames."""
 
     try:
         parsed = UUID(run_id)
-    except (ValueError, AttributeError, TypeError) as exc:
+    except (ValueError, TypeError, AttributeError) as exc:
         raise ValueError("Invalid run ID") from exc
 
     if str(parsed) != run_id:
@@ -133,7 +137,7 @@ def artifact_name(
     timestamp: str,
     run_id: str | None = None,
 ) -> str:
-    """Return a target-specific, collision-resistant filename."""
+    """Return a safe target-specific artifact filename."""
 
     if target_id not in TARGET_URLS:
         raise ValueError(f"Unknown target: {target_id}")
@@ -144,7 +148,10 @@ def artifact_name(
     if run_id is not None:
         return f"{validate_run_id(run_id)}.json"
 
-    if not re.fullmatch(r"[0-9]{8}T[0-9]{6}[0-9]*Z", timestamp):
+    if not re.fullmatch(
+        r"[0-9]{8}T[0-9]{6}[0-9]*Z",
+        timestamp,
+    ):
         raise ValueError("Invalid timestamp")
 
     if target_id == "document-api-v1":
@@ -156,6 +163,8 @@ def artifact_name(
 async def verify_target(
     target_id: str = "document-api-v1",
 ) -> None:
+    """Verify the registered target is reachable."""
+
     if target_id not in TARGET_URLS:
         raise ValueError(f"Unknown target: {target_id}")
 
@@ -167,8 +176,8 @@ async def verify_target(
         response = await client.get(
             TARGET_URLS[target_id] + "/health"
         )
-        response.raise_for_status()
 
+        response.raise_for_status()
         payload = response.json()
 
         if (
@@ -182,6 +191,8 @@ async def validate_target_oracle(
     target_id: str,
     mode: str,
 ) -> dict:
+    """Select evaluator-only ground-truth validation."""
+
     if target_id == "document-api-v1":
         return await validate_lab(mode)
 
@@ -197,6 +208,8 @@ def adjudicate_target(
     evidence,
     oracle: dict,
 ):
+    """Route findings to the registered evaluator."""
+
     if target_id == "document-api-v1":
         return evaluate_submission(
             submission,
@@ -265,7 +278,7 @@ async def main(
     target_id: str = "document-api-v1",
     run_id: str | None = None,
 ) -> int:
-    """Run an investigation and persist its exact evidence."""
+    """Run one independent investigation and save evidence."""
 
     if mode not in {"vulnerable", "patched"}:
         raise ValueError("Invalid mode")
@@ -390,8 +403,34 @@ async def main(
         timezone.utc
     ).strftime("%Y%m%dT%H%M%S%fZ")
 
+    # Generate protocol metadata separately from model execution.
+    # It must never enter the model-visible transcript.
+    protocol_record = create_run_protocol(
+        target_id=target_id,
+        mode=mode,
+        prompt=prompt,
+        run_id=run_id,
+    )
+
     artifact = {
-        "experiment": "multitarget_findings_v2",
+        "experiment": "multitarget_findings_instrumented_v1",
+        "diagnostic_protocol_version": "6.5D-2C",
+        "protocol_record": protocol_record,
+        "protocol_fingerprint": (
+            protocol_record["protocol_fingerprint"]
+        ),
+        "termination_reason": run.termination_reason,
+        "provider_diagnostics": [
+            {
+                "step_number": index,
+                "metadata": step.get(
+                    "diagnostic_metadata", {}
+                ),
+                "finish_reason": step.get("finish_reason"),
+            }
+            for index, step in enumerate(run.steps, 1)
+            if step.get("type") == "model"
+        ],
         "timestamp": timestamp,
         "run_id": run_id,
         "target_id": target_id,
@@ -471,9 +510,25 @@ async def main(
     print("HTTP observations:", len(evidence))
     print("Unique paths:", coverage["unique_paths"])
     print("Submission valid:", submission_result.valid)
+
     print(
         "Submitted findings:",
         len(submission_result.submission.findings),
+    )
+
+    print("\nPROTOCOL RECORD")
+    print("-" * 60)
+    print(
+        "Protocol version:",
+        protocol_record["specification"]["protocol_version"],
+    )
+    print(
+        "Protocol fingerprint:",
+        protocol_record["protocol_fingerprint"],
+    )
+    print(
+        "Protocol run ID:",
+        protocol_record["run_id"],
     )
 
     print("\nEVIDENCE INTEGRITY")
