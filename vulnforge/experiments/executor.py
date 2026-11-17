@@ -1,9 +1,5 @@
 
-"""VulnForge registry-backed, run-linked experiment executor.
-
-Milestone 6.5D-2D:
-Protocol validation and reproducibility linkage.
-"""
+"""Registry-backed, protocol-validated VulnForge executor."""
 
 import asyncio
 import hashlib
@@ -18,6 +14,7 @@ from uuid import UUID, uuid4
 
 from .config import ExperimentConfig
 from .docker_manager import DockerManager
+from .execution_lock import experiment_lock
 from .manifest import create_manifest, save_manifest
 from .protocol_binding import verify_run_protocol
 
@@ -28,7 +25,6 @@ INVESTIGATION_DIR = ROOT / "artifacts" / "investigations"
 
 SUPPORTED_MODEL = "qwen2.5-coder:7b"
 SUPPORTED_PROMPT = "structured_findings_v1"
-
 SUPPORTED_TARGETS = {
     "document-api-v1",
     "input-api-v1",
@@ -36,8 +32,6 @@ SUPPORTED_TARGETS = {
 
 
 def validate_runner_config(config: ExperimentConfig) -> None:
-    """Reject configurations the runner cannot honor."""
-
     if (
         config.target_id not in SUPPORTED_TARGETS
         or config.provider != "ollama"
@@ -50,14 +44,11 @@ def validate_runner_config(config: ExperimentConfig) -> None:
         or config.seed is not None
     ):
         raise ValueError(
-            "Unsupported experiment configuration for "
-            "the current Qwen research protocol."
+            "Unsupported Qwen research protocol configuration"
         )
 
 
 def resolve_target(config: ExperimentConfig):
-    """Resolve a trusted registry-backed target adapter."""
-
     from vulnforge.corpus.adapters import create_target_adapter
 
     return create_target_adapter(
@@ -67,22 +58,15 @@ def resolve_target(config: ExperimentConfig):
 
 
 def atomic_json(path: Path, payload: dict) -> None:
-    """Create JSON without overwriting existing results."""
+    """Create a JSON file without overwriting an earlier result."""
 
-    path.parent.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
-
+    path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(
         f".{path.name}.{uuid4().hex}.tmp"
     )
 
     try:
-        with temporary.open(
-            "x",
-            encoding="utf-8",
-        ) as handle:
+        with temporary.open("x", encoding="utf-8") as handle:
             json.dump(
                 payload,
                 handle,
@@ -90,26 +74,22 @@ def atomic_json(path: Path, payload: dict) -> None:
                 sort_keys=True,
                 default=str,
             )
-
             handle.flush()
             os.fsync(handle.fileno())
 
         os.link(temporary, path)
-
     finally:
         temporary.unlink(missing_ok=True)
 
 
 def validate_run_id(run_id: str) -> str:
-    """Require a canonical UUID."""
-
     try:
         parsed = UUID(run_id)
-    except (ValueError, TypeError, AttributeError) as exc:
+    except (TypeError, ValueError, AttributeError) as exc:
         raise ValueError("Invalid run ID") from exc
 
     if str(parsed) != run_id:
-        raise ValueError("Invalid run ID")
+        raise ValueError("Noncanonical run ID")
 
     return run_id
 
@@ -120,8 +100,6 @@ async def run_investigation(
     target_id: str = "document-api-v1",
     run_id: str | None = None,
 ) -> dict:
-    """Execute the approved investigation CLI."""
-
     command = [
         sys.executable,
         str(ROOT / "investigate_lab.py"),
@@ -132,8 +110,10 @@ async def run_investigation(
     ]
 
     if run_id is not None:
-        validate_run_id(run_id)
-        command.extend(["--run-id", run_id])
+        command.extend([
+            "--run-id",
+            validate_run_id(run_id),
+        ])
 
     process = await asyncio.create_subprocess_exec(
         *command,
@@ -147,14 +127,16 @@ async def run_investigation(
             process.communicate(),
             timeout=timeout,
         )
-
     except asyncio.TimeoutError as exc:
         process.kill()
         await process.communicate()
-
         raise TimeoutError(
-            "Investigation exceeded its wall-clock budget"
+            "Investigation exceeded wall-clock budget"
         ) from exc
+    except asyncio.CancelledError:
+        process.kill()
+        await process.communicate()
+        raise
 
     return {
         "exit_code": process.returncode,
@@ -164,18 +146,16 @@ async def run_investigation(
 
 
 def artifact_for_run(run_id: str) -> Path:
-    """Return the exact artifact path for a registered run."""
-
-    validate_run_id(run_id)
-
-    return INVESTIGATION_DIR / f"{run_id}.json"
+    return INVESTIGATION_DIR / (
+        f"{validate_run_id(run_id)}.json"
+    )
 
 
 def find_new_artifact(
     before: set[str],
     mode: str,
 ) -> Path | None:
-    """Legacy helper retained for compatibility."""
+    """Legacy compatibility helper; not used for new runs."""
 
     if not INVESTIGATION_DIR.exists():
         return None
@@ -185,18 +165,14 @@ def find_new_artifact(
         for path in INVESTIGATION_DIR.glob(
             f"qwen_{mode}_*.json"
         )
-        if path.name not in before and path.is_file()
+        if path.is_file() and path.name not in before
     ]
 
     return candidates[0] if len(candidates) == 1 else None
 
 
 def artifact_sha256(path: Path) -> str:
-    """Calculate artifact SHA-256."""
-
-    return hashlib.sha256(
-        path.read_bytes()
-    ).hexdigest()
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def benchmark_is_valid(
@@ -204,8 +180,6 @@ def benchmark_is_valid(
     config: ExperimentConfig,
     run_id: str | None = None,
 ) -> bool:
-    """Validate benchmark identity, integrity and protocol."""
-
     if not isinstance(benchmark, dict):
         return False
 
@@ -218,31 +192,25 @@ def benchmark_is_valid(
     if not isinstance(oracle, dict):
         return False
 
-    if (
-        run_id is not None
-        and benchmark.get("run_id") != run_id
-    ):
-        return False
-
     if run_id is not None:
-        record = benchmark.get("protocol_record")
+        if benchmark.get("run_id") != run_id:
+            return False
 
+        record = benchmark.get("protocol_record")
         if not isinstance(record, dict):
             return False
 
         from investigate_lab import research_prompt_for
 
         try:
+            prompt = research_prompt_for(config.target_id)
             linkage = verify_run_protocol(
                 record,
                 target_id=config.target_id,
                 mode=config.target_mode,
-                prompt=research_prompt_for(
-                    config.target_id
-                ),
+                prompt=prompt,
                 run_id=run_id,
             )
-
         except (ValueError, TypeError, KeyError):
             return False
 
@@ -255,10 +223,7 @@ def benchmark_is_valid(
         ):
             return False
 
-        if (
-            benchmark.get("research_prompt")
-            != research_prompt_for(config.target_id)
-        ):
+        if benchmark.get("research_prompt") != prompt:
             return False
 
     return (
@@ -283,13 +248,14 @@ async def execute_experiment(
     manager: DockerManager | None = None,
     timeout: float = 900.0,
     cleanup: bool = True,
+    lock_timeout: float = 30.0,
 ) -> dict:
-    """Run one approved experiment and preserve its outcome."""
+    """Execute one experiment under a shared process lock."""
 
     validate_runner_config(config)
 
-    if timeout <= 0:
-        raise ValueError("Timeout must be positive")
+    if timeout <= 0 or lock_timeout < 0:
+        raise ValueError("Invalid timeout")
 
     adapter = resolve_target(config)
 
@@ -299,11 +265,10 @@ async def execute_experiment(
         )
     elif manager.target.target_id != adapter.target_id:
         raise ValueError(
-            "Provided Docker manager targets another application"
+            "Docker manager targets another application"
         )
 
     manifest = create_manifest(config)
-
     manifest_path = save_manifest(
         manifest,
         RESULT_DIR / "manifests",
@@ -312,7 +277,6 @@ async def execute_experiment(
     result_path = (
         RESULT_DIR / "results" / f"{manifest.run_id}.json"
     )
-
     artifact_path = artifact_for_run(manifest.run_id)
 
     started_at = datetime.now(timezone.utc)
@@ -322,101 +286,107 @@ async def execute_experiment(
     error = None
     execution = None
     benchmark = None
-    artifact_digest = None
+    digest = None
     target_verified = False
     cleanup_error = None
+    protocol_validation = None
+    protocol_fingerprint = None
+    lock_acquired = False
 
     try:
-        if artifact_path.exists():
-            raise FileExistsError(
-                "Artifact already exists for this run ID"
-            )
+        async with experiment_lock(timeout=lock_timeout):
+            lock_acquired = True
 
-        await manager.reset(config.target_mode)
+            try:
+                if artifact_path.exists():
+                    raise FileExistsError(
+                        "Artifact already exists for run ID"
+                    )
 
-        await manager.verify_mode(config.target_mode)
-        target_verified = True
+                await manager.reset(config.target_mode)
+                await manager.verify_mode(config.target_mode)
+                target_verified = True
 
-        execution = await run_investigation(
-            config.target_mode,
-            timeout,
-            target_id=config.target_id,
-            run_id=manifest.run_id,
-        )
-
-        if execution["exit_code"] != 0:
-            error = "investigation_process_failed"
-
-        elif not artifact_path.is_file():
-            error = "investigation_artifact_missing"
-
-        else:
-            benchmark = json.loads(
-                artifact_path.read_text(
-                    encoding="utf-8"
+                execution = await run_investigation(
+                    config.target_mode,
+                    timeout,
+                    target_id=config.target_id,
+                    run_id=manifest.run_id,
                 )
-            )
 
-            artifact_digest = artifact_sha256(
-                artifact_path
-            )
+                if execution["exit_code"] != 0:
+                    error = "investigation_process_failed"
 
-            if benchmark_is_valid(
-                benchmark,
-                config,
-                run_id=manifest.run_id,
-            ):
-                status = "completed"
-            else:
-                status = "invalid"
-                error = "benchmark_validation_failed"
+                elif not artifact_path.is_file():
+                    error = "investigation_artifact_missing"
+
+                else:
+                    benchmark = json.loads(
+                        artifact_path.read_text(
+                            encoding="utf-8"
+                        )
+                    )
+                    digest = artifact_sha256(artifact_path)
+
+                    record = benchmark.get("protocol_record")
+                    if isinstance(record, dict):
+                        protocol_fingerprint = record.get(
+                            "protocol_fingerprint"
+                        )
+
+                        from investigate_lab import (
+                            research_prompt_for,
+                        )
+
+                        try:
+                            protocol_validation = verify_run_protocol(
+                                record,
+                                target_id=config.target_id,
+                                mode=config.target_mode,
+                                prompt=research_prompt_for(
+                                    config.target_id
+                                ),
+                                run_id=manifest.run_id,
+                            )
+                        except (
+                            ValueError,
+                            TypeError,
+                            KeyError,
+                        ):
+                            protocol_validation = {
+                                "valid": False,
+                                "errors": [
+                                    "protocol_validation_exception"
+                                ],
+                            }
+
+                    if benchmark_is_valid(
+                        benchmark,
+                        config,
+                        run_id=manifest.run_id,
+                    ):
+                        status = "completed"
+                    else:
+                        status = "invalid"
+                        error = "benchmark_validation_failed"
+
+            except Exception as exc:
+                error = f"{type(exc).__name__}: {exc}"
+
+            finally:
+                if cleanup:
+                    try:
+                        await manager.stop()
+                    except Exception as exc:
+                        cleanup_error = (
+                            f"{type(exc).__name__}: {exc}"
+                        )
 
     except Exception as exc:
         error = f"{type(exc).__name__}: {exc}"
 
-    finally:
-        if cleanup:
-            try:
-                await manager.stop()
-            except Exception as exc:
-                cleanup_error = (
-                    f"{type(exc).__name__}: {exc}"
-                )
-
-    protocol_fingerprint = None
-    protocol_validation = None
-
-    if isinstance(benchmark, dict):
-        record = benchmark.get("protocol_record")
-
-        if isinstance(record, dict):
-            protocol_fingerprint = record.get(
-                "protocol_fingerprint"
-            )
-
-            from investigate_lab import research_prompt_for
-
-            try:
-                protocol_validation = verify_run_protocol(
-                    record,
-                    target_id=config.target_id,
-                    mode=config.target_mode,
-                    prompt=research_prompt_for(
-                        config.target_id
-                    ),
-                    run_id=manifest.run_id,
-                )
-
-            except (ValueError, TypeError, KeyError):
-                protocol_validation = {
-                    "valid": False,
-                    "errors": [
-                        "protocol_validation_exception"
-                    ],
-                }
-
     result = {
-        "schema_version": "6.5D-2D",
+        "schema_version": "6.6A-4B",
         "run_id": manifest.run_id,
         "manifest_path": str(manifest_path),
         "config": config.model_dump(mode="json"),
@@ -426,6 +396,7 @@ async def execute_experiment(
         "protocol_validation": protocol_validation,
         "target_id": adapter.target_id,
         "target_mode_verified": target_verified,
+        "execution_lock_acquired": lock_acquired,
         "status": status,
         "error": error,
         "started_at": started_at.isoformat(),
@@ -438,10 +409,9 @@ async def execute_experiment(
         ),
         "artifact_path": (
             str(artifact_path)
-            if artifact_path.is_file()
-            else None
+            if artifact_path.is_file() else None
         ),
-        "artifact_sha256": artifact_digest,
+        "artifact_sha256": digest,
         "benchmark_summary": (
             {
                 "run_status": benchmark.get("run_status"),
@@ -453,7 +423,8 @@ async def execute_experiment(
                     "deduplication"
                 ),
             }
-            if benchmark is not None else None
+            if isinstance(benchmark, dict)
+            else None
         ),
         "execution": execution,
         "cleanup_error": cleanup_error,
