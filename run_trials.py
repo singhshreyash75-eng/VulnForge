@@ -16,7 +16,11 @@ async def main():
 
     parser.add_argument(
         "--target",
-        choices=["document-api-v1", "input-api-v1"],
+        choices=[
+            "document-api-v1",
+            "input-api-v1",
+            "rate-limit-api-v1",
+        ],
         default="document-api-v1",
     )
     parser.add_argument(

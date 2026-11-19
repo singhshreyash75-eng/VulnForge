@@ -21,6 +21,7 @@ PROTOCOL_VERSION = "6.5D-2D"
 APPROVED_TARGETS = (
     "document-api-v1",
     "input-api-v1",
+    "rate-limit-api-v1",
 )
 
 APPROVED_MODES = (

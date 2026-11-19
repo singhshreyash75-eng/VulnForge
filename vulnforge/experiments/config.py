@@ -16,6 +16,7 @@ from pydantic import (
 TargetID = Literal[
     "document-api-v1",
     "input-api-v1",
+    "rate-limit-api-v1",
 ]
 
 

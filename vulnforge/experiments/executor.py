@@ -28,6 +28,7 @@ SUPPORTED_PROMPT = "structured_findings_v1"
 SUPPORTED_TARGETS = {
     "document-api-v1",
     "input-api-v1",
+    "rate-limit-api-v1",
 }
 
 

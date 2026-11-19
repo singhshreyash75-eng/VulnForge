@@ -18,6 +18,7 @@ async def main():
         choices=[
             "document-api-v1",
             "input-api-v1",
+            "rate-limit-api-v1",
         ],
         default="document-api-v1",
     )
