@@ -119,6 +119,11 @@ class DockerManager:
                     "Docker Compose command timed out"
                 ) from exc
 
+            except asyncio.CancelledError:
+                process.kill()
+                await process.communicate()
+                raise
+
         except FileNotFoundError as exc:
             raise DockerLifecycleError(
                 "Docker CLI not found"
@@ -135,11 +140,9 @@ class DockerManager:
         return output
 
     async def wait_ready(self) -> None:
-        """Wait until the registered health endpoint is healthy."""
+        """Poll the registered health endpoint until ready."""
 
-        deadline = (
-            time.monotonic() + self.readiness_timeout
-        )
+        deadline = time.monotonic() + self.readiness_timeout
 
         async with httpx.AsyncClient(
             timeout=3.0,
@@ -172,10 +175,10 @@ class DockerManager:
         )
 
     async def verify_mode(self, mode: str) -> None:
-        """Verify target-specific ground truth before investigation.
+        """Verify evaluator-only target behavior.
 
-        This check is evaluator-side and must never be passed
-        into the model's research transcript.
+        The oracle result must never be included in the
+        investigating model's research transcript.
         """
 
         self._validate(mode)
@@ -186,6 +189,10 @@ class DockerManager:
 
         if self.target.target_id == "input-api-v1":
             await self._verify_input_mode(mode)
+            return
+
+        if self.target.target_id == "rate-limit-api-v1":
+            await self._verify_rate_limit_mode(mode)
             return
 
         raise DockerLifecycleError(
@@ -253,7 +260,7 @@ class DockerManager:
         self,
         mode: str,
     ) -> None:
-        """Check the controlled HTML output-encoding behavior."""
+        """Check controlled HTML output-encoding behavior."""
 
         base_url = self.target.health_url.removesuffix(
             "/health"
@@ -309,6 +316,51 @@ class DockerManager:
         if not valid:
             raise DockerLifecycleError(
                 f"Input API does not match {mode} mode"
+            )
+
+    async def _verify_rate_limit_mode(
+        self,
+        mode: str,
+    ) -> None:
+        """Delegate to the independent rate-limit oracle."""
+
+        from vulnforge.evaluation.rate_limit_oracle import (
+            verify_rate_limit_mode,
+        )
+
+        # Prevent a custom DockerTarget from redirecting
+        # the registered oracle to an unrelated service.
+        if (
+            self.target.health_url
+            != "http://127.0.0.1:18082/health"
+        ):
+            raise DockerLifecycleError(
+                "Rate-limit target health URL mismatch"
+            )
+
+        try:
+            result = await verify_rate_limit_mode(mode)
+
+        except Exception as exc:
+            raise DockerLifecycleError(
+                "Rate-limit oracle execution failed"
+            ) from exc
+
+        if (
+            not isinstance(result, dict)
+            or result.get("target_id")
+            != "rate-limit-api-v1"
+            or result.get("expected_mode") != mode
+            or result.get("oracle_valid") is not True
+        ):
+            reason = (
+                result.get("error")
+                if isinstance(result, dict)
+                else "invalid_oracle_result"
+            )
+
+            raise DockerLifecycleError(
+                f"Rate-limit mode mismatch: {reason}"
             )
 
     async def start(self, mode: str) -> None:

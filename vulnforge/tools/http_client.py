@@ -1,9 +1,5 @@
 
-"""Restricted HTTP inspection for approved VulnForge targets.
-
-The model cannot select an origin, port, external URL,
-HTTP method, or unrestricted application path.
-"""
+"""Restricted HTTP inspection for approved VulnForge targets."""
 
 import json
 import re
@@ -14,10 +10,14 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
 from .gateway import ToolGateway, ToolSpec
-
+from .rate_limit_client import (
+    RateLimitInspectInput,
+    RestrictedRateLimitClient,
+)
 
 LAB_ORIGIN = "http://127.0.0.1:18080"
 INPUT_ORIGIN = "http://127.0.0.1:18081"
+RATE_LIMIT_ORIGIN = "http://127.0.0.1:18082"
 
 ALLOWED_PATH = re.compile(
     r"^/(health|api/documents(?:/[0-9]{1,6})?)$"
@@ -31,46 +31,30 @@ ALLOWED_IDENTITIES = {
 APPROVED_ORIGINS = {
     "document-api-v1": LAB_ORIGIN,
     "input-api-v1": INPUT_ORIGIN,
+    "rate-limit-api-v1": RATE_LIMIT_ORIGIN,
 }
 
 
 class HttpInspectInput(BaseModel):
-    """Legacy document API inspection contract."""
-
     model_config = ConfigDict(extra="forbid")
 
     method: Literal["GET"] = "GET"
-
-    path: str = Field(
-        min_length=1,
-        max_length=100,
-    )
-
+    path: str = Field(min_length=1, max_length=100)
     identity: Literal[
         "alice", "bob", "anonymous"
     ] = "anonymous"
 
 
 class InputInspectInput(BaseModel):
-    """Restricted input-rendering API inspection contract."""
-
     model_config = ConfigDict(extra="forbid")
 
     method: Literal["GET"] = "GET"
-
-    path: Literal[
-        "/health",
-        "/api/search",
-    ]
-
-    query: str = Field(
-        default="",
-        max_length=200,
-    )
+    path: Literal["/health", "/api/search"]
+    query: str = Field(default="", max_length=200)
 
 
 class RestrictedHttpClient:
-    """Legacy document API client with fixed local origin."""
+    """Existing document API inspection client."""
 
     def __init__(
         self,
@@ -90,9 +74,7 @@ class RestrictedHttpClient:
             )
 
         if timeout <= 0 or max_response_bytes < 1:
-            raise ValueError(
-                "Invalid HTTP client limits"
-            )
+            raise ValueError("Invalid HTTP client limits")
 
         self.origin = origin
         self.max_requests = max_requests
@@ -100,10 +82,7 @@ class RestrictedHttpClient:
         self.max_response_bytes = max_response_bytes
         self.request_count = 0
 
-    async def inspect(
-        self,
-        args: HttpInspectInput,
-    ) -> dict:
+    async def inspect(self, args: HttpInspectInput) -> dict:
         if self.request_count >= self.max_requests:
             return {"error": "request_budget_exhausted"}
 
@@ -170,7 +149,7 @@ class RestrictedHttpClient:
 
 
 class RestrictedInputClient:
-    """Fixed-origin HTTP client for the synthetic input API."""
+    """Existing synthetic input API inspection client."""
 
     def __init__(
         self,
@@ -184,9 +163,7 @@ class RestrictedInputClient:
             )
 
         if timeout <= 0 or max_response_bytes < 1:
-            raise ValueError(
-                "Invalid HTTP client limits"
-            )
+            raise ValueError("Invalid HTTP client limits")
 
         self.origin = INPUT_ORIGIN
         self.max_requests = max_requests
@@ -194,10 +171,7 @@ class RestrictedInputClient:
         self.max_response_bytes = max_response_bytes
         self.request_count = 0
 
-    async def inspect(
-        self,
-        args: InputInspectInput,
-    ) -> dict:
+    async def inspect(self, args: InputInspectInput) -> dict:
         if self.request_count >= self.max_requests:
             return {"error": "request_budget_exhausted"}
 
@@ -209,9 +183,6 @@ class RestrictedInputClient:
 
         self.request_count += 1
 
-        # Canonical path includes the exact query sent.
-        # This allows evidence references to identify
-        # distinct requests without changing EvidenceRecord.
         query_string = (
             urlencode({"q": args.query})
             if args.path == "/api/search"
@@ -295,18 +266,20 @@ def http_gateway(
             max_requests=max_requests
         )
 
-        gateway.register(
-            ToolSpec(
-                name="http_inspect",
-                description=(
-                    "Send a bounded GET request to the "
-                    "registered local document API. "
-                    "Allowed paths: /health, /api/documents, "
-                    "/api/documents/{numeric_id}. "
-                    "Synthetic identities: alice, bob, anonymous."
-                ),
-                parameters=HttpInspectInput.model_json_schema(),
+        spec = ToolSpec(
+            name="http_inspect",
+            description=(
+                "Send a bounded GET request to the "
+                "registered local document API. "
+                "Allowed paths: /health, /api/documents, "
+                "/api/documents/{numeric_id}. "
+                "Synthetic identities: alice, bob, anonymous."
             ),
+            parameters=HttpInspectInput.model_json_schema(),
+        )
+
+        gateway.register(
+            spec,
             HttpInspectInput,
             client.inspect,
         )
@@ -316,20 +289,46 @@ def http_gateway(
             max_requests=max_requests
         )
 
-        gateway.register(
-            ToolSpec(
-                name="http_inspect",
-                description=(
-                    "Send a bounded GET request to the "
-                    "registered local search API. "
-                    "Allowed paths: /health and /api/search. "
-                    "Use the query argument to supply "
-                    "a search string. The response may "
-                    "contain HTML."
-                ),
-                parameters=InputInspectInput.model_json_schema(),
+        spec = ToolSpec(
+            name="http_inspect",
+            description=(
+                "Send a bounded GET request to the "
+                "registered local search API. "
+                "Allowed paths: /health and /api/search. "
+                "Use the query argument to supply "
+                "a search string. The response may "
+                "contain HTML."
             ),
+            parameters=InputInspectInput.model_json_schema(),
+        )
+
+        gateway.register(
+            spec,
             InputInspectInput,
+            client.inspect,
+        )
+
+    elif target_id == "rate-limit-api-v1":
+        client = RestrictedRateLimitClient(
+            max_requests=max_requests
+        )
+
+        spec = ToolSpec(
+            name="http_inspect",
+            description=(
+                "Send a bounded GET request to the "
+                "registered local rate-limit API. "
+                "Allowed paths: /health and /api/search. "
+                "Use the query argument for searches. "
+                "Requests use a stable synthetic client "
+                "identity during this investigation."
+            ),
+            parameters=RateLimitInspectInput.model_json_schema(),
+        )
+
+        gateway.register(
+            spec,
+            RateLimitInspectInput,
             client.inspect,
         )
 

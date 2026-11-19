@@ -12,9 +12,7 @@ from vulnforge.corpus.registry import (
     CorpusRegistry,
     PROJECT_ROOT,
 )
-from vulnforge.experiments.docker_manager import (
-    DockerTarget,
-)
+from vulnforge.experiments.docker_manager import DockerTarget
 
 
 class TargetAdapterError(ValueError):
@@ -49,6 +47,15 @@ APPROVED_TARGETS = {
         health_path="/health",
         allowed_modes=("vulnerable", "patched"),
     ),
+    "rate-limit-api-v1": ApprovedTarget(
+        compose_file=(
+            "lab/targets/rate_limit_api/docker-compose.yml"
+        ),
+        host="127.0.0.1",
+        port=18082,
+        health_path="/health",
+        allowed_modes=("vulnerable", "patched"),
+    ),
 }
 
 
@@ -70,8 +77,8 @@ def create_target_adapter(
 ) -> TargetAdapter:
     """Resolve a registered target using trusted settings.
 
-    This function performs static validation only.
-    It does not launch Docker or validate runtime behavior.
+    Performs static validation only. Does not launch Docker
+    or validate runtime behavior.
     """
 
     if registry is None:

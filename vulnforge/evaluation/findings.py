@@ -3,11 +3,11 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class EvidenceRecord(BaseModel):
-    """A recorded HTTP observation from the trusted tool trace."""
+    """Recorded HTTP observation from a trusted tool trace."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -18,9 +18,45 @@ class EvidenceRecord(BaseModel):
     status: int = Field(ge=100, le=599)
     body: dict | list | str | None = None
 
+    request_sequence: int | None = Field(
+        default=None,
+        ge=1,
+    )
+    request_started_seconds: float | None = Field(
+        default=None,
+        ge=0,
+        allow_inf_nan=False,
+    )
+    request_finished_seconds: float | None = Field(
+        default=None,
+        ge=0,
+        allow_inf_nan=False,
+    )
+
+    @model_validator(mode="after")
+    def validate_timing(self):
+        start = self.request_started_seconds
+        finish = self.request_finished_seconds
+
+        if (start is None) != (finish is None):
+            raise ValueError(
+                "Request timing must include start and finish"
+            )
+
+        if (
+            start is not None
+            and finish is not None
+            and finish < start
+        ):
+            raise ValueError(
+                "Request finish cannot precede start"
+            )
+
+        return self
+
 
 class SecurityFinding(BaseModel):
-    """A model-submitted claim, not an evaluator verdict."""
+    """Model-submitted claim, not an evaluator verdict."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -43,7 +79,7 @@ class SecurityFinding(BaseModel):
 
 
 class FindingSubmission(BaseModel):
-    """The model's final structured research submission."""
+    """Final structured research submission."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -61,7 +97,7 @@ class FindingSubmission(BaseModel):
 
 
 class FindingAdjudication(BaseModel):
-    """An evaluator-owned verdict for one submitted claim."""
+    """Evaluator-owned verdict for one submitted claim."""
 
     model_config = ConfigDict(extra="forbid")
 
