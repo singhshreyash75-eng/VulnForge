@@ -1,0 +1,35 @@
+
+name: rate_limit_api
+
+services:
+  rate-limit-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    environment:
+      LAB_MODE: ${LAB_MODE:-patched}
+
+    ports:
+      - "127.0.0.1:18082:8000"
+
+    networks:
+      - rate_limit_lab_internal
+
+    restart: "no"
+
+    security_opt:
+      - no-new-privileges:true
+
+    cap_drop:
+      - ALL
+
+    pids_limit: 64
+
+    mem_limit: 256m
+
+    cpus: 1.0
+
+networks:
+  rate_limit_lab_internal:
+    driver: bridge
